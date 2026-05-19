@@ -15,7 +15,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import type { BookmarkCard, Category } from '../types/bookmark'
 import { useBookmarkStore } from '../stores/useBookmarkStore'
-import { useDropHintStore } from '../stores/useDropHintStore'
+import { useDropHintStore, findDropTargetAt } from '../stores/useDropHintStore'
 import { toast } from '../stores/useToastStore'
 import { useAISettingsStore } from '../ai/useAISettingsStore'
 import {
@@ -302,6 +302,9 @@ function CategorySection({
   const reorder = useBookmarkStore((s) => s.reorderCardsInCategory)
   const addCard = useBookmarkStore((s) => s.addCard)
   const moveCard = useBookmarkStore((s) => s.moveCard)
+  // v0.21.1 文件夹拖拽：同父排序 + 跨父 reparent 走这两个 action
+  const reorderSiblings = useBookmarkStore((s) => s.reorderSiblings)
+  const moveCategory = useBookmarkStore((s) => s.moveCategory)
 
   // header 渲染辅助：full 显示完整路径头，compact 仅显示折叠按钮（用于根 section）
   const showFullHeader = headerVariant === 'full'
@@ -334,45 +337,23 @@ function CategorySection({
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   )
+  // 文件夹拖拽用独立 sensor 实例；与书签共用 sensor 也能工作，但分开更清晰
+  const folderSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  )
 
-  /**
-   * 跨容器拖拽桥接（v0.20.3）
-   *
-   * dnd-kit 各 DndContext 是封闭的：BookmarkCardItem 在本 CategorySection
-   * 的 DndContext 内注册 useSortable，无法被侧栏 / 其他 CategorySection 内的
-   * droppable 识别。我们用一个旁路：拖拽期间用 elementFromPoint 反查鼠标下方
-   * 是否有 [data-card-drop-target] 元素（由 FolderCard / 侧栏行挂载），
-   * 命中则写到 useDropHintStore，onDragEnd 时根据 hint 调 moveCard 跨分类。
-   *
-   * 注意点：
-   * - 被拖卡片本身被 dnd-kit 用 transform 移到了指针下方，
-   *   elementFromPoint 会先命中它本身；调用前临时关 pointer-events 让它"透明"。
-   * - 拖到自己所在分类（源 categoryId）= 无意义，忽略；让 dnd-kit 走原排序逻辑。
-   * - 拖到当前 CategorySection 的 FolderCard 时 hint 命中正常；拖到侧栏 row 时也命中。
-   * - 移动到目标分类时统一追加到末尾（targetIndex = 目标分类已有卡片数）。
-   */
-  const findDropTargetAt = (x: number, y: number, activeCardId: string): string | null => {
-    const activeEl = document.querySelector(
-      `[data-dnd-card="${activeCardId}"]`,
-    ) as HTMLElement | null
-    let prev = ''
-    if (activeEl) {
-      prev = activeEl.style.pointerEvents
-      activeEl.style.pointerEvents = 'none'
-    }
-    const el = document.elementFromPoint(x, y) as HTMLElement | null
-    if (activeEl) activeEl.style.pointerEvents = prev
-    if (!el) return null
-    const dropEl = el.closest('[data-card-drop-target]') as HTMLElement | null
-    return dropEl?.getAttribute('data-card-drop-target') ?? null
-  }
+  /* ─── 书签卡片拖拽：同分类排序 + 跨分类 moveCard（v0.21.0） ─── */
 
   const handleDragMove = (e: DragMoveEvent) => {
     const rect = e.active.rect.current.translated
     if (!rect) return
     const cx = (rect.left + rect.right) / 2
     const cy = (rect.top + rect.bottom) / 2
-    const targetId = findDropTargetAt(cx, cy, e.active.id as string)
+    const targetId = findDropTargetAt(
+      cx,
+      cy,
+      `[data-dnd-card="${e.active.id}"]`,
+    )
     // 源分类不算（让 dnd-kit 接管同分类排序）
     const next = targetId && targetId !== category.id ? targetId : null
     if (useDropHintStore.getState().hoverCategoryId !== next) {
@@ -418,6 +399,87 @@ function CategorySection({
     const newIdx = ids.indexOf(over.id as string)
     if (oldIdx === -1 || newIdx === -1) return
     await reorder(category.id, arrayMove(ids, oldIdx, newIdx))
+  }
+
+  /* ─── 文件夹卡片拖拽：同父排序 + 跨父 reparent（v0.21.1） ─── */
+
+  const handleFolderDragMove = (e: DragMoveEvent) => {
+    const rect = e.active.rect.current.translated
+    if (!rect) return
+    const cx = (rect.left + rect.right) / 2
+    const cy = (rect.top + rect.bottom) / 2
+    const sourceId = e.active.id as string
+    const targetId = findDropTargetAt(
+      cx,
+      cy,
+      `[data-dnd-folder="${sourceId}"]`,
+    )
+
+    let next: string | null = null
+    if (targetId && targetId !== sourceId) {
+      const sourceCat = allCategories.find((c) => c.id === sourceId)
+      const targetCat = allCategories.find((c) => c.id === targetId)
+      const sourceParent = sourceCat?.parentId ?? ''
+      const targetParent = targetCat?.parentId ?? ''
+      // 同父兄弟 → 让 dnd-kit 走 sortable 排序，不算跨父
+      // 拖到自己当前父级本身（侧栏行）→ 也跳过（等价于排序场景）
+      const sameSibling = targetCat && targetParent === sourceParent
+      const targetIsOwnParent = targetId === sourceParent
+      if (!sameSibling && !targetIsOwnParent) {
+        // 防循环引用：目标是源的后代时禁止
+        if (sourceCat) {
+          const desc = collectDescendantsDFS(sourceId, allCategories)
+          if (!desc.some((c) => c.id === targetId)) {
+            next = targetId
+          }
+        }
+      }
+    }
+
+    if (useDropHintStore.getState().hoverCategoryId !== next) {
+      useDropHintStore.getState().set(next)
+    }
+  }
+
+  const handleFolderDragCancel = () => {
+    useDropHintStore.getState().set(null)
+  }
+
+  const handleFolderDragEnd = async (e: DragEndEvent) => {
+    const { active, over } = e
+    const hint = useDropHintStore.getState().hoverCategoryId
+    useDropHintStore.getState().set(null)
+    const sourceId = active.id as string
+
+    // 1) 跨父 reparent：拖到了另一个 FolderCard 或侧栏行（非同父）
+    if (hint && hint !== sourceId) {
+      const moved = allCategories.find((c) => c.id === sourceId)
+      const target = allCategories.find((c) => c.id === hint)
+      try {
+        // targetIndex=0：放到目标分类下的首位（用户后续可继续拖动微调顺序）
+        await moveCategory(sourceId, hint, 0)
+        if (moved && target) {
+          toast.success(
+            '已移动文件夹',
+            `「${moved.name}」→「${target.name}」`,
+          )
+        }
+      } catch (err) {
+        toast.error(
+          '移动失败',
+          err instanceof Error ? err.message : '未知错误',
+        )
+      }
+      return
+    }
+
+    // 2) 同父排序
+    if (!over || sourceId === over.id) return
+    const ids = subFolders.map((c) => c.id)
+    const oldIdx = ids.indexOf(sourceId)
+    const newIdx = ids.indexOf(over.id as string)
+    if (oldIdx === -1 || newIdx === -1) return
+    await reorderSiblings(category.id, arrayMove(ids, oldIdx, newIdx))
   }
 
   const handleAddCard = async () => {
@@ -595,7 +657,11 @@ function CategorySection({
             </div>
           )}
 
-          {/* 直接子文件夹（仅根 section 显示）—— 放在书签下方 */}
+          {/* 直接子文件夹（仅根 section 显示）—— 放在书签下方
+              v0.21.1 起 FolderCard 也支持拖拽：
+              - 拖到同父级兄弟 FolderCard → 走 sortable 排序（reorderSiblings）
+              - 拖到其他 FolderCard / 侧栏行 → 跨父 reparent（moveCategory，hint 命中后追加首位）
+              - 拖到自己 / 自己的 descendant → 防循环忽略 */}
           {subFolders.length > 0 && (
             <div>
               {/* 仅当上面有书签时给文件夹加标题，做视觉分隔；
@@ -605,11 +671,24 @@ function CategorySection({
                   文件夹
                 </h3>
               )}
-              <div className={GRID_COLS}>
-                {subFolders.map((cat) => (
-                  <FolderCard key={cat.id} category={cat} />
-                ))}
-              </div>
+              <DndContext
+                sensors={folderSensors}
+                collisionDetection={closestCenter}
+                onDragMove={handleFolderDragMove}
+                onDragEnd={handleFolderDragEnd}
+                onDragCancel={handleFolderDragCancel}
+              >
+                <SortableContext
+                  items={subFolders.map((c) => c.id)}
+                  strategy={rectSortingStrategy}
+                >
+                  <div className={GRID_COLS}>
+                    {subFolders.map((cat) => (
+                      <FolderCard key={cat.id} category={cat} draggable />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
             </div>
           )}
 

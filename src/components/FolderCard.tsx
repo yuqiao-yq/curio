@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import type { Category } from '../types/bookmark'
 import { useBookmarkStore } from '../stores/useBookmarkStore'
 import { useDropHintStore } from '../stores/useDropHintStore'
@@ -10,6 +12,12 @@ import { confirmDialog, promptDialog } from './Dialog'
 
 interface Props {
   category: Category
+  /**
+   * 是否参与 dnd-kit 排序拖拽。
+   * 默认 false（旧用法兼容，不拖拽）；BookmarkGrid 的 root section 文件夹区块传 true，
+   * 让用户能拖拽 FolderCard 在兄弟间排序，或拖到其他文件夹 / 侧栏行改变父级。
+   */
+  draggable?: boolean
 }
 
 /**
@@ -30,13 +38,13 @@ interface Props {
  * - 重命名：就地编辑（Enter 保存 / Esc 取消 / blur 提交）
  * - 备注：与书签卡同款，prompt 编辑（保留弹窗以便多行输入）
  */
-export function FolderCard({ category }: Props) {
+export function FolderCard({ category, draggable = false }: Props) {
   const setActive = useBookmarkStore((s) => s.setActiveCategory)
   const cards = useBookmarkStore((s) => s.cards)
   const categories = useBookmarkStore((s) => s.categories)
   const removeCategory = useBookmarkStore((s) => s.removeCategory)
   const updateCategory = useBookmarkStore((s) => s.updateCategory)
-  // 跨文件夹拖拽（v0.20.3）：当某书签卡片悬停在本文件夹上时，订阅 hint 高亮
+  // 跨文件夹拖拽（v0.21.0+）：当某书签卡片 / 文件夹卡片悬停在本卡上时，订阅 hint 高亮
   const isDropHovered = useDropHintStore(
     (s) => s.hoverCategoryId === category.id,
   )
@@ -112,27 +120,84 @@ export function FolderCard({ category }: Props) {
       void removeCategory(category.id)
   }
 
+  // v0.21.1：FolderCard 也参与 dnd-kit 排序拖拽（同 BookmarkCardItem 同款）。
+  // 重命名时禁用，避免 input 与 drag 互相干扰。
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: category.id, disabled: !draggable || renaming })
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  }
+  // 拖动自己时本卡不应该高亮自己（hint 检测里已防护，这里再做一道兜底）
+  const showDropHint = isDropHovered && !isDragging
+
+  // 防止"拖拽结束 → mouseup 触发 onClick → 误进入子文件夹"
+  // 与 BookmarkCardItem 同款保护：原生 pointerdown/up 监听位移 > 5px 标记
+  const cardRef = useRef<HTMLDivElement | null>(null)
+  const draggedRecently = useRef(false)
+  const setRefs = (el: HTMLDivElement | null) => {
+    cardRef.current = el
+    setNodeRef(el)
+  }
+  useEffect(() => {
+    const el = cardRef.current
+    if (!el) return
+    let downX = 0
+    let downY = 0
+    const onDown = (e: PointerEvent) => {
+      downX = e.clientX
+      downY = e.clientY
+    }
+    const onUp = (e: PointerEvent) => {
+      const moved = Math.hypot(e.clientX - downX, e.clientY - downY)
+      draggedRecently.current = moved > 5
+    }
+    el.addEventListener('pointerdown', onDown)
+    el.addEventListener('pointerup', onUp)
+    return () => {
+      el.removeEventListener('pointerdown', onDown)
+      el.removeEventListener('pointerup', onUp)
+    }
+  }, [])
+
   return (
     <div
-      // v0.20.3 跨文件夹拖拽：标记本卡为可放置目标，
+      ref={setRefs}
+      style={style}
+      // v0.21.0+ 跨文件夹拖拽：标记本卡为可放置目标，
       // CategorySection 的 onDragMove 用 elementFromPoint 查询此属性。
       data-card-drop-target={category.id}
+      // v0.21.1：FolderCard 自身被拖时的"我是谁"标识，让 findDropTargetAt 排除自己。
+      data-dnd-folder={category.id}
+      // 拖拽 listeners 挂在根 div（与 BookmarkCardItem 同款；
+      // 子按钮 / IconPicker / CardMenu 已 stopPropagation pointerdown）
+      {...(draggable && !renaming ? { ...attributes, ...listeners } : {})}
       className={cn(
         'card group p-3 select-none transition-shadow',
         'flex flex-col gap-2',
         renaming
           ? 'cursor-default min-h-24 ring-2 ring-brand/40 shadow-md'
-          : 'cursor-pointer h-24 hover:border-brand/40 hover:shadow-brand/10',
+          : draggable
+            ? 'cursor-grab active:cursor-grabbing h-24 hover:border-brand/40 hover:shadow-brand/10'
+            : 'cursor-pointer h-24 hover:border-brand/40 hover:shadow-brand/10',
         // 拖拽落点高亮（淡蓝色，与卡片自身的 brand 紫蓝区分开）
-        isDropHovered &&
+        showDropHint &&
           'ring-2 ring-sky-400/70 dark:ring-sky-400/60 bg-sky-50/60 dark:bg-sky-500/10 shadow-md',
       )}
       onClick={() => {
         if (renaming) return
+        if (draggedRecently.current) return // 防拖拽误触
         setActive(category.id)
       }}
       title={
-        isDropHovered
+        showDropHint
           ? `放入文件夹：${category.name}`
           : renaming
             ? undefined
