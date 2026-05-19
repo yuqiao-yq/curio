@@ -112,10 +112,32 @@ export function BookmarkCardItem({
     if (editing) titleInputRef.current?.focus()
   }, [editing])
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
+  /**
+   * v0.21.3 拖拽体验增强：
+   * - 拖拽时把卡片"提"起来：scale 1.04 + 大阴影 + zIndex 9999
+   *   （之前没设 zIndex，导致拖到左侧菜单栏时被 z-30 的 sidebar 内部元素遮挡）
+   * - zIndex 选 9999：高于 sidebar 内部所有元素（最高 z-30）和主区，
+   *   同时低于 toast(10000) / AI 浮窗(10100) / Dialog(10200)，
+   *   避免抢占全局浮层的视觉优先级
+   * - opacity 0.92 替代 0.4：之前太"透明"显得卡片是个虚影；
+   *   现在保留极轻的淡化提示拖拽态，但本体仍清晰可见
+   * - cursor: grabbing 拖拽时显示"抓握中"
+   * - 拼接 scale 时复用 dnd-kit 输出的 transform 字符串
+   */
+  const baseTransform = CSS.Transform.toString(transform) ?? ''
+  const enhancedTransform = isDragging
+    ? `${baseTransform} scale(1.04)`.trim()
+    : baseTransform || undefined
+  const style: React.CSSProperties = {
+    transform: enhancedTransform,
     transition,
-    opacity: isDragging ? 0.4 : 1,
+    opacity: isDragging ? 0.92 : 1,
+    zIndex: isDragging ? 9999 : undefined,
+    cursor: isDragging ? 'grabbing' : undefined,
+    boxShadow: isDragging
+      ? '0 18px 40px -8px rgba(99, 102, 241, 0.45), 0 6px 16px -4px rgba(0, 0, 0, 0.25)'
+      : undefined,
+    willChange: isDragging ? 'transform' : undefined,
   }
 
   const openUrl = () => {

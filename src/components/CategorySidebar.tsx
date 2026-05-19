@@ -738,10 +738,23 @@ function SortableSidebarRow(props: RowProps) {
     isDragging,
   } = useSortable({ id: cat.id, disabled })
 
+  // v0.21.3：与 BookmarkCardItem 同款拖拽视觉增强；
+  // 但侧栏行是横向窄条，scale 1.04 在窄行上微妙更明显，改用 1.02。
+  // zIndex 9999 同样高于侧栏内部所有元素，确保拖到主区时不被侧栏 z-30 元素遮挡。
+  const baseTransform = CSS.Transform.toString(transform) ?? ''
+  const enhancedTransform = isDragging
+    ? `${baseTransform} scale(1.02)`.trim()
+    : baseTransform || undefined
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
+    transform: enhancedTransform,
     transition,
-    opacity: isDragging ? 0.4 : 1,
+    opacity: isDragging ? 0.92 : 1,
+    zIndex: isDragging ? 9999 : undefined,
+    cursor: isDragging ? 'grabbing' : undefined,
+    boxShadow: isDragging
+      ? '0 12px 28px -6px rgba(99, 102, 241, 0.45), 0 4px 12px -2px rgba(0, 0, 0, 0.22)'
+      : undefined,
+    willChange: isDragging ? 'transform' : undefined,
   }
 
   // v0.20.3 跨文件夹拖拽：当主网格里的某书签卡片悬停在本侧栏行上时高亮

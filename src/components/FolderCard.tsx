@@ -130,10 +130,21 @@ export function FolderCard({ category, draggable = false }: Props) {
     transition,
     isDragging,
   } = useSortable({ id: category.id, disabled: !draggable || renaming })
-  const style = {
-    transform: CSS.Transform.toString(transform),
+  // v0.21.3：与 BookmarkCardItem 同款拖拽视觉增强（zIndex/scale/shadow/cursor）
+  const baseTransform = CSS.Transform.toString(transform) ?? ''
+  const enhancedTransform = isDragging
+    ? `${baseTransform} scale(1.04)`.trim()
+    : baseTransform || undefined
+  const style: React.CSSProperties = {
+    transform: enhancedTransform,
     transition,
-    opacity: isDragging ? 0.4 : 1,
+    opacity: isDragging ? 0.92 : 1,
+    zIndex: isDragging ? 9999 : undefined,
+    cursor: isDragging ? 'grabbing' : undefined,
+    boxShadow: isDragging
+      ? '0 18px 40px -8px rgba(99, 102, 241, 0.45), 0 6px 16px -4px rgba(0, 0, 0, 0.25)'
+      : undefined,
+    willChange: isDragging ? 'transform' : undefined,
   }
   // 拖动自己时本卡不应该高亮自己（hint 检测里已防护，这里再做一道兜底）
   const showDropHint = isDropHovered && !isDragging
