@@ -1,11 +1,13 @@
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
   closestCenter,
   useSensor,
   useSensors,
   type DragEndEvent,
   type DragMoveEvent,
+  type DragStartEvent,
 } from '@dnd-kit/core'
 import {
   SortableContext,
@@ -23,7 +25,7 @@ import {
   type EmbedSearchHit,
 } from '../ai/services/embedder'
 import { isAIConfigured } from '../ai/types'
-import { BookmarkCardItem } from './BookmarkCardItem'
+import { BookmarkCardItem, CardDragPreview } from './BookmarkCardItem'
 import { RecentSection } from './RecentSection'
 import { promptDialog } from './Dialog'
 import { cn } from '../utils/cn'
@@ -317,6 +319,8 @@ function CategorySection({
   // - compact header（根 section）：默认展开，让用户切到分类后立刻看到该分类的书签
   // BookmarkGrid 通过 key 中带 activeCategoryId 让本组件在切换时 remount 回到默认态
   const [collapsed, setCollapsed] = useState(showFullHeader)
+  // v0.21.4：DragOverlay 需要的"当前被拖卡片 id"
+  const [activeCardId, setActiveCardId] = useState<string | null>(null)
 
   const subFolders = useMemo(
     () =>
@@ -340,7 +344,11 @@ function CategorySection({
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   )
 
-  /* ─── 书签卡片拖拽：同分类排序 + 跨分类 moveCard（v0.21.0 / v0.21.2） ─── */
+  /* ─── 书签卡片拖拽：同分类排序 + 跨分类 moveCard（v0.21.0 / v0.21.2 / v0.21.4） ─── */
+
+  const handleDragStart = (e: DragStartEvent) => {
+    setActiveCardId(e.active.id as string)
+  }
 
   const handleDragMove = (e: DragMoveEvent) => {
     const rect = e.active.rect.current.translated
@@ -361,12 +369,14 @@ function CategorySection({
 
   const handleDragCancel = () => {
     useDropHintStore.getState().set(null)
+    setActiveCardId(null)
   }
 
   const handleDragEnd = async (e: DragEndEvent) => {
     const { active, over } = e
     const hint = useDropHintStore.getState().hoverCategoryId
     useDropHintStore.getState().set(null)
+    setActiveCardId(null)
 
     // 1) 跨分类：用户拖到了某个 FolderCard 或侧栏行（且不是源分类）
     if (hint && hint !== category.id) {
@@ -628,6 +638,7 @@ function CategorySection({
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
+                onDragStart={handleDragStart}
                 onDragMove={handleDragMove}
                 onDragEnd={handleDragEnd}
                 onDragCancel={handleDragCancel}
@@ -652,6 +663,28 @@ function CategorySection({
                     )}
                   </div>
                 </SortableContext>
+                {/* v0.21.4 DragOverlay：把拖拽中的卡片视觉 portal 到 <body>，
+                    逃出 main 容器 overflow 的裁剪——主诉求"被左侧菜单栏遮挡"
+                    的根因是 main overflow-y:auto 强制 overflow-x 也变 auto，
+                    transform 出主区边界会被 clip 掉。Portal 到 body 后无 clip。
+
+                    dropAnimation：松手时 overlay 平滑回到原 sortable 元素位置
+                    （同分类排序时这就是新位置；跨分类时是源位置，180ms 内消失）。
+                    带来用户提到的"吸附效果"。 */}
+                <DragOverlay
+                  dropAnimation={{
+                    duration: 200,
+                    easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)',
+                  }}
+                  zIndex={9999}
+                >
+                  {activeCardId
+                    ? (() => {
+                        const card = allCards.find((c) => c.id === activeCardId)
+                        return card ? <CardDragPreview card={card} /> : null
+                      })()
+                    : null}
+                </DragOverlay>
               </DndContext>
             </div>
           )}

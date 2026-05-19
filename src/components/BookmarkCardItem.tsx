@@ -113,31 +113,20 @@ export function BookmarkCardItem({
   }, [editing])
 
   /**
-   * v0.21.3 拖拽体验增强：
-   * - 拖拽时把卡片"提"起来：scale 1.04 + 大阴影 + zIndex 9999
-   *   （之前没设 zIndex，导致拖到左侧菜单栏时被 z-30 的 sidebar 内部元素遮挡）
-   * - zIndex 选 9999：高于 sidebar 内部所有元素（最高 z-30）和主区，
-   *   同时低于 toast(10000) / AI 浮窗(10100) / Dialog(10200)，
-   *   避免抢占全局浮层的视觉优先级
-   * - opacity 0.92 替代 0.4：之前太"透明"显得卡片是个虚影；
-   *   现在保留极轻的淡化提示拖拽态，但本体仍清晰可见
-   * - cursor: grabbing 拖拽时显示"抓握中"
-   * - 拼接 scale 时复用 dnd-kit 输出的 transform 字符串
+   * v0.21.4：拖拽视觉改由 DragOverlay 接管（CategorySection 内挂载）
+   *
+   * 原 inline z-index/scale/shadow 方案修不了"被左侧菜单栏遮挡"，
+   * 因为 main 容器 overflow-y: auto 会强制 overflow-x 也变 auto，
+   * 卡片 transform 穿过主区边界后会被 main 直接 clip 掉。
+   *
+   * DragOverlay 把"被拖中的卡片视觉"portal 到 <body>，逃出 main 的裁剪，
+   * 同时自带 dropAnimation（吸附效果）。原 sortable 元素只剩占位的"幽灵"
+   * 让用户看到来源。
    */
-  const baseTransform = CSS.Transform.toString(transform) ?? ''
-  const enhancedTransform = isDragging
-    ? `${baseTransform} scale(1.04)`.trim()
-    : baseTransform || undefined
   const style: React.CSSProperties = {
-    transform: enhancedTransform,
+    transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.92 : 1,
-    zIndex: isDragging ? 9999 : undefined,
-    cursor: isDragging ? 'grabbing' : undefined,
-    boxShadow: isDragging
-      ? '0 18px 40px -8px rgba(99, 102, 241, 0.45), 0 6px 16px -4px rgba(0, 0, 0, 0.25)'
-      : undefined,
-    willChange: isDragging ? 'transform' : undefined,
+    opacity: isDragging ? 0.3 : 1,
   }
 
   const openUrl = () => {
@@ -576,8 +565,10 @@ function CardTagChips({
  * - 用户自定义 icon 是 emoji/字符 → 文本展示
  * - 用户自定义 icon 是 https:// 或 data:image/ → 图片展示
  * - 没设置 → 走 favicon（基于 fallbackUrl）
+ *
+ * v0.21.4 export：DragOverlay 内的 CardDragPreview 也复用本组件，保持图标一致。
  */
-function CardIconView({
+export function CardIconView({
   icon,
   fallbackUrl,
 }: {
@@ -613,5 +604,58 @@ function CardIconView({
       className="w-7 h-7 rounded-sm object-contain"
       fallbackClassName="w-7 h-7 rounded-sm text-xs"
     />
+  )
+}
+
+/**
+ * v0.21.4：拖拽时的卡片预览（DragOverlay 内渲染）
+ *
+ * 不调 useSortable 避免与原 sortable 元素的 id 冲突；纯展示组件。
+ * 视觉上比静态卡稍微"提"起：scale 1.04 + 大阴影 + cursor grabbing。
+ *
+ * 不展示 hover 操作按钮 / 编辑态 / tag chips（拖拽中用不到，反而干扰）；
+ * 保留最关键的"图标 + 标题 + 域名 + 备注"四件套。
+ */
+export function CardDragPreview({ card }: { card: BookmarkCard }) {
+  return (
+    <div
+      className="card p-3 select-none flex flex-col gap-2 h-24"
+      style={{
+        cursor: 'grabbing',
+        boxShadow:
+          '0 18px 40px -8px rgba(99, 102, 241, 0.5), 0 6px 16px -4px rgba(0, 0, 0, 0.25)',
+        transform: 'scale(1.04)',
+        transformOrigin: 'center',
+      }}
+    >
+      <div className="flex items-start gap-2">
+        <div
+          className={cn(
+            'w-8 h-8 rounded shrink-0 flex items-center justify-center',
+            'bg-slate-100 dark:bg-slate-700',
+          )}
+        >
+          <CardIconView icon={card.icon} fallbackUrl={card.url} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium truncate" title={card.title}>
+            {card.title}
+          </div>
+          <div className="text-xs text-slate-400 truncate">
+            {getHostname(card.url)}
+          </div>
+        </div>
+      </div>
+      {card.description && (
+        <div
+          className={cn(
+            'mt-auto w-full text-left text-xs text-slate-500 dark:text-slate-400',
+            'leading-snug line-clamp-2 rounded px-1.5 py-1 -mx-1.5',
+          )}
+        >
+          {card.description}
+        </div>
+      )}
+    </div>
   )
 }
