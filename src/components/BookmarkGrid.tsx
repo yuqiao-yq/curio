@@ -6,7 +6,6 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
-  type DragMoveEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
 import {
@@ -344,33 +343,40 @@ function CategorySection({
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   )
 
-  /* ─── 书签卡片拖拽：同分类排序 + 跨分类 moveCard（v0.21.0 / v0.21.2 / v0.21.4） ─── */
+  /* ─── 书签卡片拖拽：同分类排序 + 跨分类 moveCard（v0.21.0 / v0.21.2 / v0.21.4 / v0.21.6） ─── */
 
   const handleDragStart = (e: DragStartEvent) => {
     setActiveCardId(e.active.id as string)
   }
 
-  const handleDragMove = (e: DragMoveEvent) => {
-    // v0.21.5 修复：v0.21.4 引入 DragOverlay 后，dnd-kit 不再 transform
-    // 原 sortable 元素（视觉跟随交给 overlay），active.rect.current.translated
-    // 仍指向源位置，elementFromPoint 永远查不到指针下方的真实元素 →
-    // 跨容器 hint 永远不触发。
-    // 改用 activator (pointerdown 起点) + delta 直接算指针当前位置。
-    const activator = e.activatorEvent as PointerEvent
-    if (typeof activator?.clientX !== 'number') return
-    const cx = activator.clientX + e.delta.x
-    const cy = activator.clientY + e.delta.y
-    const targetId = findDropTargetAt(
-      cx,
-      cy,
-      `[data-dnd-card="${e.active.id}"]`,
-    )
-    // 源分类不算（让 dnd-kit 接管同分类排序）
-    const next = targetId && targetId !== category.id ? targetId : null
-    if (useDropHintStore.getState().hoverCategoryId !== next) {
-      useDropHintStore.getState().set(next)
+  /**
+   * v0.21.6 关键修复：拖拽期间用全局 pointermove 直接算指针位置，
+   * 不再依赖 dnd-kit 的 onDragMove。
+   *
+   * 之前的 v0.21.4 用 active.rect.current.translated（被 DragOverlay 接管 transform
+   * 后不再跟随指针），v0.21.5 改用 activatorEvent + delta（dnd-kit 的 activatorEvent
+   * 在 PointerSensor activation 后不一定是 pointerdown，clientX/Y 不可靠）。
+   * 直接监听全局 pointermove 拿真实的 clientX/clientY 最稳。
+   *
+   * 仅在有 activeCardId 时挂 listener，避免无谓开销。
+   */
+  useEffect(() => {
+    if (!activeCardId) return
+    const onMove = (e: PointerEvent) => {
+      const targetId = findDropTargetAt(
+        e.clientX,
+        e.clientY,
+        `[data-dnd-card="${activeCardId}"]`,
+      )
+      // 源分类不算（让 dnd-kit 接管同分类排序，避免 hint 跟 sortable 冲突）
+      const next = targetId && targetId !== category.id ? targetId : null
+      if (useDropHintStore.getState().hoverCategoryId !== next) {
+        useDropHintStore.getState().set(next)
+      }
     }
-  }
+    window.addEventListener('pointermove', onMove)
+    return () => window.removeEventListener('pointermove', onMove)
+  }, [activeCardId, category.id])
 
   const handleDragCancel = () => {
     useDropHintStore.getState().set(null)
@@ -597,12 +603,27 @@ function CategorySection({
       {/* compact header：根 section 专用——仅折叠按钮 + 「当前分类」标签 + 数量
           路径已由 Breadcrumb 承担，避免重复；保留折叠能力即可 */}
       {showCompactHeader && (
-        <header className="flex items-center gap-2 mb-3 group/sec">
+        <header
+          // v0.21.6：compact header（root section）也作 drop target，
+          // 解决"子文件夹的书签 → 拖回当前分类（root）"的诉求。
+          // 同 full header 共用一套 hint 视觉。
+          data-card-drop-target={category.id}
+          className={cn(
+            'flex items-center gap-2 mb-3 group/sec px-1.5 py-1 -mx-1.5 rounded-md transition-colors',
+            isHeaderDropHovered &&
+              'bg-sky-50/70 dark:bg-sky-500/10 ring-2 ring-sky-400/60',
+          )}
+          title={
+            isHeaderDropHovered
+              ? `放回当前分类：${category.name}`
+              : undefined
+          }
+        >
           <button
             onClick={() => setCollapsed((v) => !v)}
             title={collapsed ? '展开' : '折叠'}
             className={cn(
-              'w-7 h-7 flex items-center justify-center text-base rounded',
+              'w-7 h-7 flex items-center justify-center text-base rounded shrink-0',
               'text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800',
               'opacity-0 group-hover/sec:opacity-100 focus-visible:opacity-100 transition-[opacity,transform] duration-150',
               collapsed ? '' : 'rotate-90',
@@ -610,10 +631,10 @@ function CategorySection({
           >
             ▸
           </button>
-          <span className="text-xs uppercase tracking-wider text-slate-400">
+          <span className="text-xs uppercase tracking-wider text-slate-400 shrink-0">
             当前分类
           </span>
-          <span className="text-xs text-slate-400 tabular-nums">
+          <span className="text-xs text-slate-400 tabular-nums shrink-0">
             {/* 与下方主区一致：书签在前，文件夹在后 */}
             {directCards.length > 0 && `${directCards.length} 书签`}
             {directCards.length > 0 && subFolders.length > 0 && ' · '}
@@ -644,7 +665,6 @@ function CategorySection({
                 sensors={sensors}
                 collisionDetection={closestCenter}
                 onDragStart={handleDragStart}
-                onDragMove={handleDragMove}
                 onDragEnd={handleDragEnd}
                 onDragCancel={handleDragCancel}
               >
