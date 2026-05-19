@@ -200,9 +200,9 @@ export function BookmarkCardItem({
       ref={setRefs}
       style={style}
       {...dragProps}
-      // v0.20.3 跨文件夹拖拽桥接：CategorySection 的 DndContext.onDragMove
-      // 用 elementFromPoint 反查鼠标下方的 drop target，先把本卡 pointer-events
-      // 临时禁掉再调，避免命中自己。这里给一个稳定的查找属性。
+      // 跨文件夹拖拽桥接：CategorySection 的 useEffect+mousemove
+      // 用 elementsFromPoint 反查鼠标下方的 drop target；自己被拖时通过 matches
+      // activeSelector 跳过。
       data-dnd-card={card.id}
       onClick={(e) => {
         if (editing) return
@@ -619,6 +619,10 @@ export function CardIconView({
 export function CardDragPreview({ card }: { card: BookmarkCard }) {
   return (
     <div
+      // v0.21.7：标记本节点是 DragOverlay 内的预览，
+      // findDropTargetAt 扫元素栈时跳过这个子树，
+      // 否则 elementsFromPoint 命中的最顶层就是它，永远查不到下方真实 drop target。
+      data-drag-preview="true"
       className="card p-3 select-none flex flex-col gap-2 h-24"
       style={{
         cursor: 'grabbing',

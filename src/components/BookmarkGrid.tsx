@@ -32,6 +32,26 @@ import { cn } from '../utils/cn'
 const GRID_COLS =
   'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3'
 
+// 调试浮窗：拖拽时实时显示 hint 状态（v0.21.11 临时；hint 稳定后会去掉）
+function DragHintBadge() {
+  const hint = useDropHintStore((s) => s.hoverCategoryId)
+  const cats = useBookmarkStore((s) => s.categories)
+  if (!hint) return null
+  const name = cats.find((c) => c.id === hint)?.name ?? hint.slice(0, 8)
+  return (
+    <div
+      className="fixed bottom-4 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full text-xs font-medium pointer-events-none shadow-lg"
+      style={{
+        background: 'rgb(14, 165, 233)',
+        color: 'white',
+        zIndex: 10100,
+      }}
+    >
+      将放入：{name}
+    </div>
+  )
+}
+
 export function BookmarkGrid() {
   const allCards = useBookmarkStore((s) => s.cards)
   const allCategories = useBookmarkStore((s) => s.categories)
@@ -232,6 +252,8 @@ export function BookmarkGrid() {
 
   return (
     <div className="flex flex-col gap-8">
+      {/* v0.21.11 调试浮窗：拖拽期间命中目标时底部居中提示 */}
+      <DragHintBadge />
       {/* 最近使用：常驻在分类内容上方，独立折叠（搜索模式由上方 if 提前 return，这里不会渲染） */}
       <RecentSection />
 
@@ -304,8 +326,9 @@ function CategorySection({
   const moveCard = useBookmarkStore((s) => s.moveCard)
   // v0.21.2：子 section header 上编辑 description
   const updateCategory = useBookmarkStore((s) => s.updateCategory)
-  // v0.21.2：当书签拖到本子 section 的 header 时高亮（full header 才订阅有意义）
-  const isHeaderDropHovered = useDropHintStore(
+  // v0.21.2 / v0.21.8：当书签拖到本 section（header 或下方书签网格区域，
+  // 整个 section 都是 drop target）时，让 header 显示高亮提示落点
+  const isSectionDropHovered = useDropHintStore(
     (s) => s.hoverCategoryId === category.id,
   )
 
@@ -343,39 +366,32 @@ function CategorySection({
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   )
 
-  /* ─── 书签卡片拖拽：同分类排序 + 跨分类 moveCard（v0.21.0 / v0.21.2 / v0.21.4 / v0.21.6） ─── */
+  /* ─── 书签卡片拖拽：同分类排序 + 跨分类 moveCard ─── */
 
   const handleDragStart = (e: DragStartEvent) => {
     setActiveCardId(e.active.id as string)
   }
 
   /**
-   * v0.21.6 关键修复：拖拽期间用全局 pointermove 直接算指针位置，
-   * 不再依赖 dnd-kit 的 onDragMove。
+   * v0.21.9 关键修复：监听 mousemove 而非 pointermove。
    *
-   * 之前的 v0.21.4 用 active.rect.current.translated（被 DragOverlay 接管 transform
-   * 后不再跟随指针），v0.21.5 改用 activatorEvent + delta（dnd-kit 的 activatorEvent
-   * 在 PointerSensor activation 后不一定是 pointerdown，clientX/Y 不可靠）。
-   * 直接监听全局 pointermove 拿真实的 clientX/clientY 最稳。
-   *
-   * 仅在有 activeCardId 时挂 listener，避免无谓开销。
+   * 根因：dnd-kit PointerSensor 拖拽时把 pointer events 路由到 source 元素，
+   * 即使 window listener 在 capture phase 也能收到，但 lastReported 限流
+   * 让大部分采样被跳过。直接监听 mousemove + elementsFromPoint 反查，
+   * mouse events 与 pointer events 系统独立，不受 setPointerCapture 影响。
    */
   useEffect(() => {
     if (!activeCardId) return
-    const onMove = (e: PointerEvent) => {
-      const targetId = findDropTargetAt(
-        e.clientX,
-        e.clientY,
-        `[data-dnd-card="${activeCardId}"]`,
-      )
-      // 源分类不算（让 dnd-kit 接管同分类排序，避免 hint 跟 sortable 冲突）
+    const onMove = (e: MouseEvent) => {
+      const targetId = findDropTargetAt(e.clientX, e.clientY)
+      // 源分类不算（让 dnd-kit 接管同分类排序）
       const next = targetId && targetId !== category.id ? targetId : null
       if (useDropHintStore.getState().hoverCategoryId !== next) {
         useDropHintStore.getState().set(next)
       }
     }
-    window.addEventListener('pointermove', onMove)
-    return () => window.removeEventListener('pointermove', onMove)
+    window.addEventListener('mousemove', onMove)
+    return () => window.removeEventListener('mousemove', onMove)
   }, [activeCardId, category.id])
 
   const handleDragCancel = () => {
@@ -493,6 +509,12 @@ function CategorySection({
 
   return (
     <section
+      // v0.21.8：整个 section（header + 下方书签网格）都是 drop target。
+      // 之前只在 header 上挂，用户必须精确拖到细细的 header 一行；
+      // 现在拖到整个 section 任意位置（包括书签卡片之间的空白）都能命中。
+      // findDropTargetAt 用 closest() 沿祖先链向上查找，BookmarkCardItem
+      // 的祖先链终点正是这个 section，自然就命中了。
+      data-card-drop-target={category.id}
       // 子 section 按相对深度做左缩进，最多缩 3 层（避免超深嵌套时挤压主区域）
       // root section（compact）relativeDepth=0，不缩进
       style={
@@ -503,17 +525,15 @@ function CategorySection({
     >
       {showFullHeader && (
         <header
-          // v0.21.2：整个 header 是书签拖拽的 drop target —— 把书签拖到这里
-          // 即可移动到该子文件夹（替代原来需要"先有一个 FolderCard 才能拖"的设计）
-          data-card-drop-target={category.id}
+          // v0.21.8 起 data-card-drop-target 移到 <section> 上；header 只保留视觉
           className={cn(
             'flex items-center gap-2 mb-3 group/sec px-1.5 py-1 -mx-1.5 rounded-md transition-colors',
             // drop hint 高亮（淡蓝色 + ring）
-            isHeaderDropHovered &&
+            isSectionDropHovered &&
               'bg-sky-50/70 dark:bg-sky-500/10 ring-2 ring-sky-400/60',
           )}
           title={
-            isHeaderDropHovered
+            isSectionDropHovered
               ? `放入文件夹：${category.name}`
               : undefined
           }
@@ -604,17 +624,14 @@ function CategorySection({
           路径已由 Breadcrumb 承担，避免重复；保留折叠能力即可 */}
       {showCompactHeader && (
         <header
-          // v0.21.6：compact header（root section）也作 drop target，
-          // 解决"子文件夹的书签 → 拖回当前分类（root）"的诉求。
-          // 同 full header 共用一套 hint 视觉。
-          data-card-drop-target={category.id}
+          // v0.21.8 起 drop target 在 <section> 上；header 只保留视觉
           className={cn(
             'flex items-center gap-2 mb-3 group/sec px-1.5 py-1 -mx-1.5 rounded-md transition-colors',
-            isHeaderDropHovered &&
+            isSectionDropHovered &&
               'bg-sky-50/70 dark:bg-sky-500/10 ring-2 ring-sky-400/60',
           )}
           title={
-            isHeaderDropHovered
+            isSectionDropHovered
               ? `放回当前分类：${category.name}`
               : undefined
           }
