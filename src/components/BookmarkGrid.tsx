@@ -351,10 +351,15 @@ function CategorySection({
   }
 
   const handleDragMove = (e: DragMoveEvent) => {
-    const rect = e.active.rect.current.translated
-    if (!rect) return
-    const cx = (rect.left + rect.right) / 2
-    const cy = (rect.top + rect.bottom) / 2
+    // v0.21.5 修复：v0.21.4 引入 DragOverlay 后，dnd-kit 不再 transform
+    // 原 sortable 元素（视觉跟随交给 overlay），active.rect.current.translated
+    // 仍指向源位置，elementFromPoint 永远查不到指针下方的真实元素 →
+    // 跨容器 hint 永远不触发。
+    // 改用 activator (pointerdown 起点) + delta 直接算指针当前位置。
+    const activator = e.activatorEvent as PointerEvent
+    if (typeof activator?.clientX !== 'number') return
+    const cx = activator.clientX + e.delta.x
+    const cy = activator.clientY + e.delta.y
     const targetId = findDropTargetAt(
       cx,
       cy,
