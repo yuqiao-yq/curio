@@ -24,7 +24,6 @@ import {
 } from '../ai/services/embedder'
 import { isAIConfigured } from '../ai/types'
 import { BookmarkCardItem } from './BookmarkCardItem'
-import { FolderCard } from './FolderCard'
 import { RecentSection } from './RecentSection'
 import { promptDialog } from './Dialog'
 import { cn } from '../utils/cn'
@@ -302,9 +301,12 @@ function CategorySection({
   const reorder = useBookmarkStore((s) => s.reorderCardsInCategory)
   const addCard = useBookmarkStore((s) => s.addCard)
   const moveCard = useBookmarkStore((s) => s.moveCard)
-  // v0.21.1 文件夹拖拽：同父排序 + 跨父 reparent 走这两个 action
-  const reorderSiblings = useBookmarkStore((s) => s.reorderSiblings)
-  const moveCategory = useBookmarkStore((s) => s.moveCategory)
+  // v0.21.2：子 section header 上编辑 description
+  const updateCategory = useBookmarkStore((s) => s.updateCategory)
+  // v0.21.2：当书签拖到本子 section 的 header 时高亮（full header 才订阅有意义）
+  const isHeaderDropHovered = useDropHintStore(
+    (s) => s.hoverCategoryId === category.id,
+  )
 
   // header 渲染辅助：full 显示完整路径头，compact 仅显示折叠按钮（用于根 section）
   const showFullHeader = headerVariant === 'full'
@@ -337,12 +339,8 @@ function CategorySection({
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   )
-  // 文件夹拖拽用独立 sensor 实例；与书签共用 sensor 也能工作，但分开更清晰
-  const folderSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
-  )
 
-  /* ─── 书签卡片拖拽：同分类排序 + 跨分类 moveCard（v0.21.0） ─── */
+  /* ─── 书签卡片拖拽：同分类排序 + 跨分类 moveCard（v0.21.0 / v0.21.2） ─── */
 
   const handleDragMove = (e: DragMoveEvent) => {
     const rect = e.active.rect.current.translated
@@ -401,85 +399,22 @@ function CategorySection({
     await reorder(category.id, arrayMove(ids, oldIdx, newIdx))
   }
 
-  /* ─── 文件夹卡片拖拽：同父排序 + 跨父 reparent（v0.21.1） ─── */
+  /* ─── 描述编辑（v0.21.2：子 section header 上点击描述触发） ─── */
 
-  const handleFolderDragMove = (e: DragMoveEvent) => {
-    const rect = e.active.rect.current.translated
-    if (!rect) return
-    const cx = (rect.left + rect.right) / 2
-    const cy = (rect.top + rect.bottom) / 2
-    const sourceId = e.active.id as string
-    const targetId = findDropTargetAt(
-      cx,
-      cy,
-      `[data-dnd-folder="${sourceId}"]`,
-    )
-
-    let next: string | null = null
-    if (targetId && targetId !== sourceId) {
-      const sourceCat = allCategories.find((c) => c.id === sourceId)
-      const targetCat = allCategories.find((c) => c.id === targetId)
-      const sourceParent = sourceCat?.parentId ?? ''
-      const targetParent = targetCat?.parentId ?? ''
-      // 同父兄弟 → 让 dnd-kit 走 sortable 排序，不算跨父
-      // 拖到自己当前父级本身（侧栏行）→ 也跳过（等价于排序场景）
-      const sameSibling = targetCat && targetParent === sourceParent
-      const targetIsOwnParent = targetId === sourceParent
-      if (!sameSibling && !targetIsOwnParent) {
-        // 防循环引用：目标是源的后代时禁止
-        if (sourceCat) {
-          const desc = collectDescendantsDFS(sourceId, allCategories)
-          if (!desc.some((c) => c.id === targetId)) {
-            next = targetId
-          }
-        }
-      }
-    }
-
-    if (useDropHintStore.getState().hoverCategoryId !== next) {
-      useDropHintStore.getState().set(next)
-    }
-  }
-
-  const handleFolderDragCancel = () => {
-    useDropHintStore.getState().set(null)
-  }
-
-  const handleFolderDragEnd = async (e: DragEndEvent) => {
-    const { active, over } = e
-    const hint = useDropHintStore.getState().hoverCategoryId
-    useDropHintStore.getState().set(null)
-    const sourceId = active.id as string
-
-    // 1) 跨父 reparent：拖到了另一个 FolderCard 或侧栏行（非同父）
-    if (hint && hint !== sourceId) {
-      const moved = allCategories.find((c) => c.id === sourceId)
-      const target = allCategories.find((c) => c.id === hint)
-      try {
-        // targetIndex=0：放到目标分类下的首位（用户后续可继续拖动微调顺序）
-        await moveCategory(sourceId, hint, 0)
-        if (moved && target) {
-          toast.success(
-            '已移动文件夹',
-            `「${moved.name}」→「${target.name}」`,
-          )
-        }
-      } catch (err) {
-        toast.error(
-          '移动失败',
-          err instanceof Error ? err.message : '未知错误',
-        )
-      }
-      return
-    }
-
-    // 2) 同父排序
-    if (!over || sourceId === over.id) return
-    const ids = subFolders.map((c) => c.id)
-    const oldIdx = ids.indexOf(sourceId)
-    const newIdx = ids.indexOf(over.id as string)
-    if (oldIdx === -1 || newIdx === -1) return
-    await reorderSiblings(category.id, arrayMove(ids, oldIdx, newIdx))
+  const handleEditDescription = async () => {
+    const next = await promptDialog({
+      title: category.description
+        ? `编辑「${category.name}」备注`
+        : `为「${category.name}」添加备注`,
+      defaultValue: category.description ?? '',
+      placeholder: '简短描述这个文件夹…',
+      allowEmpty: true,
+      multiline: true,
+    })
+    if (next === null) return
+    void updateCategory(category.id, {
+      description: next.trim() || undefined,
+    })
   }
 
   const handleAddCard = async () => {
@@ -546,12 +481,27 @@ function CategorySection({
       }
     >
       {showFullHeader && (
-        <header className="flex items-center gap-2 mb-3 group/sec">
+        <header
+          // v0.21.2：整个 header 是书签拖拽的 drop target —— 把书签拖到这里
+          // 即可移动到该子文件夹（替代原来需要"先有一个 FolderCard 才能拖"的设计）
+          data-card-drop-target={category.id}
+          className={cn(
+            'flex items-center gap-2 mb-3 group/sec px-1.5 py-1 -mx-1.5 rounded-md transition-colors',
+            // drop hint 高亮（淡蓝色 + ring）
+            isHeaderDropHovered &&
+              'bg-sky-50/70 dark:bg-sky-500/10 ring-2 ring-sky-400/60',
+          )}
+          title={
+            isHeaderDropHovered
+              ? `放入文件夹：${category.name}`
+              : undefined
+          }
+        >
           <button
             onClick={() => setCollapsed((v) => !v)}
             title={collapsed ? '展开' : '折叠'}
             className={cn(
-              'w-7 h-7 flex items-center justify-center text-base rounded',
+              'w-7 h-7 flex items-center justify-center text-base rounded shrink-0',
               'text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800',
               // 仅 hover 整行 header 时显示，避免视觉噪音；展开状态下应用 rotate
               'opacity-0 group-hover/sec:opacity-100 focus-visible:opacity-100 transition-[opacity,transform] duration-150',
@@ -560,21 +510,70 @@ function CategorySection({
           >
             ▸
           </button>
-          <span className="text-base leading-none">{category.icon ?? '📂'}</span>
+          <span className="text-base leading-none shrink-0">{category.icon ?? '📂'}</span>
           <button
             onClick={() => setActive(category.id)}
-            className="text-sm font-medium text-slate-700 dark:text-slate-200 hover:text-brand transition-colors truncate"
+            className="text-sm font-medium text-slate-700 dark:text-slate-200 hover:text-brand transition-colors truncate shrink-0"
             title={`进入：${breadcrumbPath}`}
           >
             {breadcrumbPath}
           </button>
-          <span className="text-xs text-slate-400 tabular-nums">
+          <span className="text-xs text-slate-400 tabular-nums shrink-0">
             {directCards.length > 0 && `${directCards.length} 个书签`}
           </span>
-          <div className="flex-1 border-t border-dashed border-slate-200 dark:border-slate-700 ml-2" />
+          {/* v0.21.2：description 紧贴数量后面；
+              - 已有：浅色 truncate 显示，点击进入编辑（promptDialog 多行）
+              - 没有：极淡的"+ 添加备注"占位，仅 hover header 时显示 */}
+          {category.description ? (
+            <>
+              <span className="text-xs text-slate-300 dark:text-slate-600 shrink-0">·</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void handleEditDescription()
+                }}
+                className={cn(
+                  'flex-1 min-w-0 text-left text-xs truncate',
+                  'text-slate-500 dark:text-slate-400',
+                  'rounded px-1 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors',
+                )}
+                title={`备注：${category.description}\n（点击编辑）`}
+              >
+                {category.description}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void handleEditDescription()
+                }}
+                className={cn(
+                  'text-xs px-1.5 py-0.5 rounded',
+                  'text-slate-300 dark:text-slate-600 hover:text-brand',
+                  'hover:bg-slate-100 dark:hover:bg-slate-700/60',
+                  'opacity-0 group-hover/sec:opacity-100 focus-visible:opacity-100 transition-opacity',
+                )}
+                title="为该文件夹添加备注"
+              >
+                + 备注
+              </button>
+              <div className="flex-1" />
+            </>
+          )}
+          <div
+            className={cn(
+              'border-t border-dashed border-slate-200 dark:border-slate-700 ml-2',
+              // description 已经占据了弹性宽度，没有时这里也要再有占位
+              category.description ? 'hidden' : 'flex-1',
+            )}
+          />
           <button
             onClick={handleAddCard}
-            className="opacity-0 group-hover/sec:opacity-100 transition-opacity btn-ghost !p-1 h-6 w-6 text-sm"
+            className="opacity-0 group-hover/sec:opacity-100 transition-opacity btn-ghost !p-1 h-6 w-6 text-sm shrink-0"
             title="在此分类添加书签"
           >+</button>
         </header>
@@ -657,40 +656,13 @@ function CategorySection({
             </div>
           )}
 
-          {/* 直接子文件夹（仅根 section 显示）—— 放在书签下方
-              v0.21.1 起 FolderCard 也支持拖拽：
-              - 拖到同父级兄弟 FolderCard → 走 sortable 排序（reorderSiblings）
-              - 拖到其他 FolderCard / 侧栏行 → 跨父 reparent（moveCategory，hint 命中后追加首位）
-              - 拖到自己 / 自己的 descendant → 防循环忽略 */}
-          {subFolders.length > 0 && (
-            <div>
-              {/* 仅当上面有书签时给文件夹加标题，做视觉分隔；
-                  纯文件夹场景去掉标题更清爽 */}
-              {directCards.length > 0 && (
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
-                  文件夹
-                </h3>
-              )}
-              <DndContext
-                sensors={folderSensors}
-                collisionDetection={closestCenter}
-                onDragMove={handleFolderDragMove}
-                onDragEnd={handleFolderDragEnd}
-                onDragCancel={handleFolderDragCancel}
-              >
-                <SortableContext
-                  items={subFolders.map((c) => c.id)}
-                  strategy={rectSortingStrategy}
-                >
-                  <div className={GRID_COLS}>
-                    {subFolders.map((cat) => (
-                      <FolderCard key={cat.id} category={cat} draggable />
-                    ))}
-                  </div>
-                </SortableContext>
-              </DndContext>
-            </div>
-          )}
+          {/* v0.21.2：移除了 root section 下的"文件夹"网格区块——
+              子文件夹的信息（图标、名称、数量、备注）已经合并到
+              下方各子 section 的 header 上，整 header 同时承担：
+              - 浏览入口（点击名称进入）
+              - 备注的显示/编辑
+              - 书签拖入的 drop target（替代原 FolderCard 的角色）
+              避免了视觉上"文件夹一排卡片 + 下面又是同一批文件夹的 section"的重复。 */}
 
           {/* 子 section 完全为空时给一个柔和提示，保持目录结构可见 */}
           {showFullHeader && sectionIsEmpty && (
