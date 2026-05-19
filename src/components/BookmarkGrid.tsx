@@ -5,6 +5,7 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragMoveEvent,
 } from '@dnd-kit/core'
 import {
   SortableContext,
@@ -14,6 +15,8 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import type { BookmarkCard, Category } from '../types/bookmark'
 import { useBookmarkStore } from '../stores/useBookmarkStore'
+import { useDropHintStore } from '../stores/useDropHintStore'
+import { toast } from '../stores/useToastStore'
 import { useAISettingsStore } from '../ai/useAISettingsStore'
 import {
   searchByEmbedding,
@@ -298,6 +301,7 @@ function CategorySection({
   const setActive = useBookmarkStore((s) => s.setActiveCategory)
   const reorder = useBookmarkStore((s) => s.reorderCardsInCategory)
   const addCard = useBookmarkStore((s) => s.addCard)
+  const moveCard = useBookmarkStore((s) => s.moveCard)
 
   // header 渲染辅助：full 显示完整路径头，compact 仅显示折叠按钮（用于根 section）
   const showFullHeader = headerVariant === 'full'
@@ -331,8 +335,83 @@ function CategorySection({
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   )
 
+  /**
+   * 跨容器拖拽桥接（v0.20.3）
+   *
+   * dnd-kit 各 DndContext 是封闭的：BookmarkCardItem 在本 CategorySection
+   * 的 DndContext 内注册 useSortable，无法被侧栏 / 其他 CategorySection 内的
+   * droppable 识别。我们用一个旁路：拖拽期间用 elementFromPoint 反查鼠标下方
+   * 是否有 [data-card-drop-target] 元素（由 FolderCard / 侧栏行挂载），
+   * 命中则写到 useDropHintStore，onDragEnd 时根据 hint 调 moveCard 跨分类。
+   *
+   * 注意点：
+   * - 被拖卡片本身被 dnd-kit 用 transform 移到了指针下方，
+   *   elementFromPoint 会先命中它本身；调用前临时关 pointer-events 让它"透明"。
+   * - 拖到自己所在分类（源 categoryId）= 无意义，忽略；让 dnd-kit 走原排序逻辑。
+   * - 拖到当前 CategorySection 的 FolderCard 时 hint 命中正常；拖到侧栏 row 时也命中。
+   * - 移动到目标分类时统一追加到末尾（targetIndex = 目标分类已有卡片数）。
+   */
+  const findDropTargetAt = (x: number, y: number, activeCardId: string): string | null => {
+    const activeEl = document.querySelector(
+      `[data-dnd-card="${activeCardId}"]`,
+    ) as HTMLElement | null
+    let prev = ''
+    if (activeEl) {
+      prev = activeEl.style.pointerEvents
+      activeEl.style.pointerEvents = 'none'
+    }
+    const el = document.elementFromPoint(x, y) as HTMLElement | null
+    if (activeEl) activeEl.style.pointerEvents = prev
+    if (!el) return null
+    const dropEl = el.closest('[data-card-drop-target]') as HTMLElement | null
+    return dropEl?.getAttribute('data-card-drop-target') ?? null
+  }
+
+  const handleDragMove = (e: DragMoveEvent) => {
+    const rect = e.active.rect.current.translated
+    if (!rect) return
+    const cx = (rect.left + rect.right) / 2
+    const cy = (rect.top + rect.bottom) / 2
+    const targetId = findDropTargetAt(cx, cy, e.active.id as string)
+    // 源分类不算（让 dnd-kit 接管同分类排序）
+    const next = targetId && targetId !== category.id ? targetId : null
+    if (useDropHintStore.getState().hoverCategoryId !== next) {
+      useDropHintStore.getState().set(next)
+    }
+  }
+
+  const handleDragCancel = () => {
+    useDropHintStore.getState().set(null)
+  }
+
   const handleDragEnd = async (e: DragEndEvent) => {
     const { active, over } = e
+    const hint = useDropHintStore.getState().hoverCategoryId
+    useDropHintStore.getState().set(null)
+
+    // 1) 跨分类：用户拖到了某个 FolderCard 或侧栏行（且不是源分类）
+    if (hint && hint !== category.id) {
+      const cardId = active.id as string
+      const targetCount = allCards.filter((c) => c.categoryId === hint).length
+      try {
+        await moveCard(cardId, hint, targetCount)
+        const targetCat = allCategories.find((c) => c.id === hint)
+        if (targetCat) {
+          toast.success(
+            '已移动书签',
+            `→「${targetCat.name}」（追加到末尾）`,
+          )
+        }
+      } catch (err) {
+        toast.error(
+          '移动失败',
+          err instanceof Error ? err.message : '未知错误',
+        )
+      }
+      return
+    }
+
+    // 2) 同分类排序（原逻辑）
     if (!over || active.id === over.id) return
     const ids = directCards.map((c) => c.id)
     const oldIdx = ids.indexOf(active.id as string)
@@ -488,7 +567,9 @@ function CategorySection({
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
+                onDragMove={handleDragMove}
                 onDragEnd={handleDragEnd}
+                onDragCancel={handleDragCancel}
               >
                 <SortableContext
                   items={directCards.map((c) => c.id)}

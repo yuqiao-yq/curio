@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Category } from '../types/bookmark'
 import { useBookmarkStore } from '../stores/useBookmarkStore'
+import { useDropHintStore } from '../stores/useDropHintStore'
 import { cn } from '../utils/cn'
 import { IconPicker } from './IconPicker'
 import { IconView } from '../utils/icon'
@@ -35,6 +36,10 @@ export function FolderCard({ category }: Props) {
   const categories = useBookmarkStore((s) => s.categories)
   const removeCategory = useBookmarkStore((s) => s.removeCategory)
   const updateCategory = useBookmarkStore((s) => s.updateCategory)
+  // 跨文件夹拖拽（v0.20.3）：当某书签卡片悬停在本文件夹上时，订阅 hint 高亮
+  const isDropHovered = useDropHintStore(
+    (s) => s.hoverCategoryId === category.id,
+  )
 
   // 该文件夹下的直接书签数 + 子文件夹数
   const directCards = cards.filter((c) => c.categoryId === category.id).length
@@ -109,18 +114,30 @@ export function FolderCard({ category }: Props) {
 
   return (
     <div
+      // v0.20.3 跨文件夹拖拽：标记本卡为可放置目标，
+      // CategorySection 的 onDragMove 用 elementFromPoint 查询此属性。
+      data-card-drop-target={category.id}
       className={cn(
-        'card group p-3 select-none',
+        'card group p-3 select-none transition-shadow',
         'flex flex-col gap-2',
         renaming
           ? 'cursor-default min-h-24 ring-2 ring-brand/40 shadow-md'
           : 'cursor-pointer h-24 hover:border-brand/40 hover:shadow-brand/10',
+        // 拖拽落点高亮（淡蓝色，与卡片自身的 brand 紫蓝区分开）
+        isDropHovered &&
+          'ring-2 ring-sky-400/70 dark:ring-sky-400/60 bg-sky-50/60 dark:bg-sky-500/10 shadow-md',
       )}
       onClick={() => {
         if (renaming) return
         setActive(category.id)
       }}
-      title={renaming ? undefined : `打开文件夹：${category.name}`}
+      title={
+        isDropHovered
+          ? `放入文件夹：${category.name}`
+          : renaming
+            ? undefined
+            : `打开文件夹：${category.name}`
+      }
     >
       {/* 顶部：图标 + 名称(+副标题 / 或编辑 input) + ⋮ */}
       <div className="flex items-start gap-2">

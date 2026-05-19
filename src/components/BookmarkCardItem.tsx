@@ -189,6 +189,10 @@ export function BookmarkCardItem({
       ref={setRefs}
       style={style}
       {...dragProps}
+      // v0.20.3 跨文件夹拖拽桥接：CategorySection 的 DndContext.onDragMove
+      // 用 elementFromPoint 反查鼠标下方的 drop target，先把本卡 pointer-events
+      // 临时禁掉再调，避免命中自己。这里给一个稳定的查找属性。
+      data-dnd-card={card.id}
       onClick={(e) => {
         if (editing) return
         if (e.defaultPrevented) return

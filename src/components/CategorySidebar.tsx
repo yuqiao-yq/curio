@@ -21,6 +21,7 @@ import {
   SIDEBAR_WIDTH_MIN,
 } from '../types/bookmark'
 import { useBookmarkStore } from '../stores/useBookmarkStore'
+import { useDropHintStore } from '../stores/useDropHintStore'
 import { cn } from '../utils/cn'
 import { IconPicker } from './IconPicker'
 import { confirmDialog, promptDialog } from './Dialog'
@@ -743,6 +744,11 @@ function SortableSidebarRow(props: RowProps) {
     opacity: isDragging ? 0.4 : 1,
   }
 
+  // v0.20.3 跨文件夹拖拽：当主网格里的某书签卡片悬停在本侧栏行上时高亮
+  const isCardDropHovered = useDropHintStore(
+    (s) => s.hoverCategoryId === cat.id,
+  )
+
   // 阻止子按钮的 pointerdown 冒泡到 dnd-kit listeners，
   // 否则点子按钮会被识别为拖拽起点
   const stop = (e: React.SyntheticEvent) => e.stopPropagation()
@@ -760,6 +766,10 @@ function SortableSidebarRow(props: RowProps) {
         // 整行作为 drag handle；同时仍保留 onClick 走 dnd-kit 距离阈值（6px 以下触发 click）
         {...attributes}
         {...listeners}
+        // v0.20.3 跨文件夹拖拽：标记本行为"书签卡片"的可放置目标。
+        // 与上方分类树自身的拖拽（dnd-kit before/after/inside）属不同语义、不同来源，
+        // 由 BookmarkGrid CategorySection 的 onDragMove 用 elementFromPoint 反查。
+        data-card-drop-target={cat.id}
         className={cn(
           'group flex items-center gap-1 pr-2 py-1.5 rounded-lg transition-colors',
           disabled ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing',
@@ -777,6 +787,9 @@ function SortableSidebarRow(props: RowProps) {
           // 嵌入指示：被拖动节点放下时会成为该行的子节点
           dropIndicator === 'inside' &&
             'ring-2 ring-brand ring-inset bg-brand/10 dark:bg-brand/20',
+          // 跨文件夹拖拽落点高亮（淡蓝色，与上面 brand 紫蓝区分）
+          isCardDropHovered &&
+            'ring-2 ring-sky-400/70 dark:ring-sky-400/60 ring-inset bg-sky-50/70 dark:bg-sky-500/15',
         )}
         style={{ paddingLeft: 4 + depth * 12 }}
         onClick={() => {
