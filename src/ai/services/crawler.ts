@@ -1,6 +1,7 @@
 import { Readability } from '@mozilla/readability'
 import {
   type PageContentRow,
+  getFailedRows,
   getOkBookmarkIds,
   putPageContent,
 } from '../../repositories/PageContentsDB'
@@ -82,7 +83,6 @@ export async function selectCardsForCrawling(
 
   // failed 模式：仅保留 DB 中存在 status='failed' 的卡（其他的没必要重抓）
   if (range.type === 'failed') {
-    const { getFailedRows } = await import('../../repositories/PageContentsDB')
     const failedRows = await getFailedRows()
     const failedIdSet = new Set(failedRows.map((r) => r.bookmarkId))
     candidates = candidates.filter((c) => failedIdSet.has(c.id))
