@@ -351,7 +351,7 @@ function PromptBody({
               'outline-none focus:border-brand focus:ring-1 focus:ring-brand/30',
               'placeholder:text-slate-400',
               validateError &&
-                'border-red-300 dark:border-red-500/60 focus:border-red-400 focus:ring-red-400/30',
+                'border-sky-300 dark:border-sky-500/60 focus:border-sky-400 focus:ring-sky-400/30',
             )}
           />
         ) : (
@@ -369,12 +369,12 @@ function PromptBody({
               'outline-none focus:border-brand focus:ring-1 focus:ring-brand/30',
               'placeholder:text-slate-400',
               validateError &&
-                'border-red-300 dark:border-red-500/60 focus:border-red-400 focus:ring-red-400/30',
+                'border-sky-300 dark:border-sky-500/60 focus:border-sky-400 focus:ring-sky-400/30',
             )}
           />
         )}
         {validateError && (
-          <div className="text-[11px] text-red-500">{validateError}</div>
+          <div className="text-[11px] text-sky-500 dark:text-sky-400">{validateError}</div>
         )}
         {multiline && (
           <div className="text-[10px] text-slate-400">
