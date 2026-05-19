@@ -32,26 +32,6 @@ import { cn } from '../utils/cn'
 const GRID_COLS =
   'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3'
 
-// 调试浮窗：拖拽时实时显示 hint 状态（v0.21.11 临时；hint 稳定后会去掉）
-function DragHintBadge() {
-  const hint = useDropHintStore((s) => s.hoverCategoryId)
-  const cats = useBookmarkStore((s) => s.categories)
-  if (!hint) return null
-  const name = cats.find((c) => c.id === hint)?.name ?? hint.slice(0, 8)
-  return (
-    <div
-      className="fixed bottom-4 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full text-xs font-medium pointer-events-none shadow-lg"
-      style={{
-        background: 'rgb(14, 165, 233)',
-        color: 'white',
-        zIndex: 10100,
-      }}
-    >
-      将放入：{name}
-    </div>
-  )
-}
-
 export function BookmarkGrid() {
   const allCards = useBookmarkStore((s) => s.cards)
   const allCategories = useBookmarkStore((s) => s.categories)
@@ -252,8 +232,6 @@ export function BookmarkGrid() {
 
   return (
     <div className="flex flex-col gap-8">
-      {/* v0.21.11 调试浮窗：拖拽期间命中目标时底部居中提示 */}
-      <DragHintBadge />
       {/* 最近使用：常驻在分类内容上方，独立折叠（搜索模式由上方 if 提前 return，这里不会渲染） */}
       <RecentSection />
 
