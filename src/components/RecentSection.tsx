@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useBookmarkStore } from '../stores/useBookmarkStore'
-import { toast } from '../stores/useToastStore'
 import type { BrowserHistoryItem } from '../stores/useBookmarkStore'
 import type { BookmarkCard } from '../types/bookmark'
 import { BookmarkCardItem } from './BookmarkCardItem'
 import { HistoryCardItem } from './HistoryCardItem'
+import { confirmDialog, promptDialog } from './Dialog'
 import { cn } from '../utils/cn'
 
 const GRID_COLS =
@@ -88,31 +88,46 @@ export function RecentSection() {
   }, [recentEntries, recentLimit, cards, includeHistory, browserHistoryItems])
 
   const handleConfigLimit = async () => {
-    const next = window.prompt(
-      '最近使用模块要展示几个网页？(1 ~ 100)',
-      String(recentLimit),
-    )
+    const next = await promptDialog({
+      title: '展示几个最近使用？',
+      message: '取值范围 1 ~ 100',
+      defaultValue: String(recentLimit),
+      placeholder: '例如 8',
+      validate: (v) => {
+        const n = parseInt(v.trim(), 10)
+        if (!Number.isFinite(n) || n <= 0) return '请输入大于 0 的整数'
+        if (n > 100) return '最多 100'
+        return null
+      },
+    })
     if (next === null) return
     const n = parseInt(next.trim(), 10)
-    if (!Number.isFinite(n) || n <= 0) {
-      toast.warning('数值不合法', '请输入大于 0 的整数')
-      return
-    }
     await setRecentLimit(n)
   }
 
   const handleClear = async () => {
     if (recentEntries.length === 0) return
-    if (!window.confirm('确定清空最近使用记录吗？\n（仅清空扩展内的打开记录，不会影响浏览器历史）')) return
+    if (
+      !(await confirmDialog({
+        title: '清空最近使用记录？',
+        message: '仅清空扩展内的打开记录，不会影响浏览器历史。',
+        confirmText: '清空',
+        danger: true,
+      }))
+    )
+      return
     await clearRecent()
   }
 
   const handleToggleHistory = async () => {
     if (!includeHistory) {
       // 关 → 开：提示一次隐私影响，避免用户误操作后看到全部历史被吓到
-      const ok = window.confirm(
-        '开启后，「最近使用」会显示你在浏览器中访问过的任意网站（不限于书签）。\n\n这只是读取本地历史用于展示，不会上传任何数据。是否开启？',
-      )
+      const ok = await confirmDialog({
+        title: '开启「合并浏览器历史」？',
+        message:
+          '开启后，「最近使用」会显示你在浏览器中访问过的任意网站（不限于书签）。\n\n这只是读取本地历史用于展示，不会上传任何数据。',
+        confirmText: '开启',
+      })
       if (!ok) return
     }
     await updateSettings({ recentIncludeBrowserHistory: !includeHistory })

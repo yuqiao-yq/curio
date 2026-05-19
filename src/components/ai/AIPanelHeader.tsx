@@ -1,5 +1,6 @@
 import { cn } from '../../utils/cn'
 import { useAIPanelStore } from '../../ai/panel/usePanelStore'
+import { confirmDialog } from '../Dialog'
 
 interface Props {
   /** 拖动区 onPointerDown，由父组件 useDraggable 提供 */
@@ -20,10 +21,10 @@ export function AIPanelHeader({ onDragPointerDown }: Props) {
   const resetPosition = useAIPanelStore((s) => s.resetPosition)
   const maximized = useAIPanelStore((s) => s.maximized)
 
-  const onContextMenu = (e: React.MouseEvent) => {
+  const onContextMenu = async (e: React.MouseEvent) => {
     e.preventDefault()
     // 简化版：直接 confirm 询问；V2 替换为 CardMenu 风格自定义菜单
-    if (window.confirm('恢复浮窗到默认位置和尺寸？')) {
+    if (await confirmDialog({ title: '恢复浮窗到默认位置和尺寸？' })) {
       resetPosition()
     }
   }

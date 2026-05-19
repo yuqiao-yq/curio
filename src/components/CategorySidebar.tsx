@@ -23,6 +23,7 @@ import {
 import { useBookmarkStore } from '../stores/useBookmarkStore'
 import { cn } from '../utils/cn'
 import { IconPicker } from './IconPicker'
+import { confirmDialog, promptDialog } from './Dialog'
 import { IconView } from '../utils/icon'
 
 // 拖到一行的"上 30% / 中 40% / 下 30%"分别表示三种放置语义
@@ -159,12 +160,20 @@ export function CategorySidebar() {
   }
 
   const handleAdd = async () => {
-    const name = window.prompt('新分类名称')
+    const name = await promptDialog({
+      title: '新建顶层分类',
+      placeholder: '分类名称',
+      validate: (v) => (v.trim() ? null : '请输入分类名'),
+    })
     if (!name?.trim()) return
     await addCategory(name.trim())
   }
   const handleAddSub = async (parent: Category) => {
-    const name = window.prompt(`在「${parent.name}」下新建子分类`)
+    const name = await promptDialog({
+      title: `在「${parent.name}」下新建子分类`,
+      placeholder: '子分类名称',
+      validate: (v) => (v.trim() ? null : '请输入分类名'),
+    })
     if (!name?.trim()) return
     await addCategory(name.trim(), undefined, parent.id)
     // 自动展开父级，让新创建的子分类立刻可见
@@ -212,9 +221,12 @@ export function CategorySidebar() {
     const allIds = collectDescendantIds(Array.from(selectedIds), categories)
     const totalCards = cards.filter((c) => allIds.has(c.categoryId)).length
     if (
-      !window.confirm(
-        `确定删除 ${allIds.size} 个分类（含子分类）、${totalCards} 个卡片吗？`,
-      )
+      !(await confirmDialog({
+        title: `删除 ${allIds.size} 个分类？`,
+        message: `这些分类下所有子分类与 ${totalCards} 个书签将一并删除。`,
+        confirmText: '删除',
+        danger: true,
+      }))
     )
       return
     await removeCategories(Array.from(selectedIds))
@@ -927,12 +939,17 @@ function SortableSidebarRow(props: RowProps) {
                   ? 'text-white/80 hover:text-white hover:bg-white/20'
                   : 'text-slate-400 hover:text-red-500 hover:bg-slate-200/80 dark:hover:bg-slate-700',
               )}
-              onClick={(e) => {
+              onClick={async (e) => {
                 e.stopPropagation()
-                const msg = hasChildren
-                  ? `删除「${cat.name}」及其所有子文件夹和书签？`
-                  : `删除「${cat.name}」及其下所有书签？`
-                if (window.confirm(msg)) onRemove(cat.id)
+                const ok = await confirmDialog({
+                  title: `删除分类「${cat.name}」？`,
+                  message: hasChildren
+                    ? '该分类下还有子文件夹和书签，删除将一并清除。'
+                    : '该分类下所有书签也会被一并删除。',
+                  confirmText: '删除',
+                  danger: true,
+                })
+                if (ok) onRemove(cat.id)
               }}
               onPointerDown={stop}
               title="删除"

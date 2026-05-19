@@ -5,6 +5,7 @@ import { cn } from '../utils/cn'
 import { IconPicker } from './IconPicker'
 import { IconView } from '../utils/icon'
 import { CardMenu, MenuIcons } from './CardMenu'
+import { confirmDialog, promptDialog } from './Dialog'
 
 interface Props {
   category: Category
@@ -77,23 +78,33 @@ export function FolderCard({ category }: Props) {
   }
 
   // ─── 备注 ───────────────────────────────
-  const handleEditNote = () => {
-    const next = window.prompt(
-      category.description ? '编辑备注' : '为该文件夹添加备注',
-      category.description ?? '',
-    )
+  const handleEditNote = async () => {
+    const next = await promptDialog({
+      title: category.description ? '编辑备注' : '为该文件夹添加备注',
+      defaultValue: category.description ?? '',
+      placeholder: '简短描述这个文件夹…',
+      allowEmpty: true,
+      multiline: true,
+    })
     if (next === null) return
     void updateCategory(category.id, {
       description: next.trim() || undefined,
     })
   }
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     const hasChildren = categories.some((c) => c.parentId === category.id)
-    const msg = hasChildren
-      ? `删除文件夹「${category.name}」及其所有子文件夹和书签？`
-      : `删除文件夹「${category.name}」及其下所有书签？`
-    if (window.confirm(msg)) void removeCategory(category.id)
+    if (
+      await confirmDialog({
+        title: `删除文件夹「${category.name}」？`,
+        message: hasChildren
+          ? '该文件夹下还有子文件夹和书签，删除将一并清除。'
+          : '该文件夹下所有书签也会被一并删除。',
+        confirmText: '删除',
+        danger: true,
+      })
+    )
+      void removeCategory(category.id)
   }
 
   return (
@@ -195,14 +206,14 @@ export function FolderCard({ category }: Props) {
                   key: 'note',
                   label: category.description ? '编辑备注' : '添加备注',
                   icon: <MenuIcons.Note />,
-                  onSelect: handleEditNote,
+                  onSelect: () => void handleEditNote(),
                 },
                 {
                   key: 'delete',
                   label: '删除',
                   icon: <MenuIcons.Trash />,
                   danger: true,
-                  onSelect: handleDelete,
+                  onSelect: () => void handleDelete(),
                 },
               ]}
             />
@@ -219,7 +230,7 @@ export function FolderCard({ category }: Props) {
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
-                handleEditNote()
+                void handleEditNote()
               }}
               onPointerDown={(e) => e.stopPropagation()}
               className={cn(
@@ -238,7 +249,7 @@ export function FolderCard({ category }: Props) {
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
-                handleEditNote()
+                void handleEditNote()
               }}
               onPointerDown={(e) => e.stopPropagation()}
               className={cn(

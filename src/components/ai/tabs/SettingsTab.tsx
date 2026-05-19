@@ -10,6 +10,7 @@ import type { AIProviderConfig } from '../../../ai/types'
 import { isAIConfigured } from '../../../ai/types'
 import { cn } from '../../../utils/cn'
 import { toast } from '../../../stores/useToastStore'
+import { confirmDialog } from '../../Dialog'
 import { useBookmarkStore } from '../../../stores/useBookmarkStore'
 import { useEmbedderStore } from '../../../ai/services/useEmbedderStore'
 import {
@@ -245,9 +246,13 @@ function EmbeddingSection() {
 
   const handleRun = async (mode: 'all' | 'missing') => {
     if (mode === 'all') {
-      const ok = window.confirm(
-        '确认全量重生成？这会清空当前所有 embedding 并重新调 API（按书签数量计费）。\n建议仅在切换 embedding 模型 / 大批量改了卡片后使用。',
-      )
+      const ok = await confirmDialog({
+        title: '确认全量重生成 embedding？',
+        message:
+          '这会清空当前所有 embedding 并重新调 API（按书签数量计费）。\n建议仅在切换 embedding 模型 / 大批量改了卡片后使用。',
+        confirmText: '全量重生成',
+        danger: true,
+      })
       if (!ok) return
     }
     const controller = new AbortController()
@@ -286,9 +291,13 @@ function EmbeddingSection() {
   }
 
   const handleClear = async () => {
-    const ok = window.confirm(
-      '确认清空所有 embedding？清空后语义搜索会回退到普通 substring 搜索，直到再次生成。',
-    )
+    const ok = await confirmDialog({
+      title: '清空所有 embedding？',
+      message:
+        '清空后语义搜索会回退到普通 substring 搜索，直到再次生成。',
+      confirmText: '清空',
+      danger: true,
+    })
     if (!ok) return
     await clearEmbeddings()
     toast.success('已清空', 'Embedding 库已重置')
@@ -613,8 +622,16 @@ function ProviderRow({ config }: { config: AIProviderConfig }) {
     }
   }
 
-  const handleDelete = () => {
-    if (window.confirm(`删除 Provider「${config.name}」？`)) {
+  const handleDelete = async () => {
+    if (
+      await confirmDialog({
+        title: `删除 Provider「${config.name}」？`,
+        message:
+          '只移除 Provider 配置（含 apiKey）；已写入的 embedding / RAG 索引等本地数据不受影响。',
+        confirmText: '删除',
+        danger: true,
+      })
+    ) {
       removeProvider(config.id)
     }
   }
@@ -713,7 +730,7 @@ function ProviderRow({ config }: { config: AIProviderConfig }) {
           <div className="flex items-center justify-end pt-1">
             <button
               type="button"
-              onClick={handleDelete}
+              onClick={() => void handleDelete()}
               className={cn(
                 'h-7 px-2.5 rounded text-xs',
                 'text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors',
@@ -1064,9 +1081,11 @@ function CrawlSection() {
     }
     if (
       targets.length > 50 &&
-      !window.confirm(
-        `本次将抓取 ${targets.length} 个网页（最多 ~30s/条，约 ${Math.ceil(targets.length / 3)} 秒）。确认开始？`,
-      )
+      !(await confirmDialog({
+        title: `本次将抓取 ${targets.length} 个网页`,
+        message: `每条最多 ~30s，预计总耗时约 ${Math.ceil(targets.length / 3)} 秒。开始？`,
+        confirmText: '开始抓取',
+      }))
     ) {
       return
     }
@@ -1126,9 +1145,13 @@ function CrawlSection() {
 
   const handleClear = async () => {
     if (
-      !window.confirm(
-        '确认清空所有已抓取的网页正文？清空后语义搜索 / RAG 问答的"内容召回"将不可用，需要重新抓取。',
-      )
+      !(await confirmDialog({
+        title: '清空所有已抓取的网页正文？',
+        message:
+          '清空后语义搜索 / RAG 问答的「内容召回」将不可用，需要重新抓取。',
+        confirmText: '清空',
+        danger: true,
+      }))
     ) {
       return
     }
@@ -1144,11 +1167,15 @@ function CrawlSection() {
     toast.success('已同意', '可以开始抓取了')
   }
 
-  const handleRevoke = () => {
+  const handleRevoke = async () => {
     if (
-      !window.confirm(
-        '撤回同意后，下次再次启动抓取时会重新弹隐私说明（已抓取的本地数据保留）。',
-      )
+      !(await confirmDialog({
+        title: '撤回内容抓取同意？',
+        message:
+          '撤回后，下次再次启动抓取时会重新弹隐私说明。本地已抓取的内容保留。',
+        confirmText: '撤回同意',
+        danger: true,
+      }))
     ) {
       return
     }
@@ -1345,7 +1372,7 @@ function CrawlSection() {
           </span>
           <button
             type="button"
-            onClick={handleRevoke}
+            onClick={() => void handleRevoke()}
             className="text-slate-400 hover:text-red-500 underline"
           >
             撤回同意
@@ -1554,17 +1581,23 @@ function SummarySection() {
     }
     if (
       range.type === 'all' &&
-      !window.confirm(
-        `'all' 模式会覆盖 ${targets.length} 张已有备注的卡片。确认？`,
-      )
+      !(await confirmDialog({
+        title: `覆盖 ${targets.length} 张卡片的备注？`,
+        message: '"all" 模式会重新生成并覆盖已有备注。',
+        confirmText: '覆盖',
+        danger: true,
+      }))
     ) {
       return
     }
     if (
       targets.length > 30 &&
-      !window.confirm(
-        `本次将为 ${targets.length} 张卡片生成备注（每张约 1 次 LLM 调用，按 token 计费）。确认开始？`,
-      )
+      !(await confirmDialog({
+        title: `为 ${targets.length} 张卡片生成备注`,
+        message:
+          '每张约 1 次 LLM 调用，按 token 计费。开始？',
+        confirmText: '开始生成',
+      }))
     ) {
       return
     }
@@ -1821,7 +1854,15 @@ function QualitySection() {
 
   const handleDelete = async () => {
     if (selected.size === 0) return
-    if (!window.confirm(`确认删除选中的 ${selected.size} 张卡片？`)) return
+    if (
+      !(await confirmDialog({
+        title: `删除选中的 ${selected.size} 张卡片？`,
+        message: '将从书签库永久删除（IndexedDB 中的 embedding / 正文索引也会被自然清理）。',
+        confirmText: '删除',
+        danger: true,
+      }))
+    )
+      return
     goApplying()
     try {
       for (const id of selected) {

@@ -23,6 +23,7 @@ import { isAIConfigured } from '../ai/types'
 import { BookmarkCardItem } from './BookmarkCardItem'
 import { FolderCard } from './FolderCard'
 import { RecentSection } from './RecentSection'
+import { promptDialog } from './Dialog'
 import { cn } from '../utils/cn'
 
 const GRID_COLS =
@@ -341,10 +342,30 @@ function CategorySection({
   }
 
   const handleAddCard = async () => {
-    const url = window.prompt('请输入网址（URL）')
+    const url = await promptDialog({
+      title: '添加书签',
+      message: '在「' + category.name + '」下新增一个书签',
+      placeholder: 'https://...',
+      validate: (v) => {
+        const t = v.trim()
+        if (!t) return '请输入网址'
+        if (!/^https?:\/\//i.test(t)) return '请以 http:// 或 https:// 开头'
+        return null
+      },
+    })
     if (!url?.trim()) return
-    const title = window.prompt('请输入标题', url) || url
-    await addCard({ categoryId: category.id, title: title.trim(), url: url.trim() })
+    const title = await promptDialog({
+      title: '书签标题',
+      defaultValue: url,
+      placeholder: '一句话描述这个书签',
+      allowEmpty: false,
+    })
+    if (!title?.trim()) return
+    await addCard({
+      categoryId: category.id,
+      title: title.trim(),
+      url: url.trim(),
+    })
   }
 
   // 计算相对 active 根的路径与深度。例：active=Test，cat=Test/1/11 → 路径 "1 / 11"，深度 2。

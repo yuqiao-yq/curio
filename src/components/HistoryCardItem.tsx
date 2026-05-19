@@ -5,6 +5,7 @@ import { getHostname } from '../utils/favicon'
 import { cn } from '../utils/cn'
 import { CardMenu, MenuIcons, type CardMenuItem } from './CardMenu'
 import { FaviconImg } from './FaviconImg'
+import { confirmDialog } from './Dialog'
 
 interface Props {
   item: BrowserHistoryItem
@@ -47,8 +48,14 @@ export function HistoryCardItem({ item }: Props) {
     }
   }
 
-  const handleDelete = () => {
-    if (!window.confirm(`从浏览器历史中删除 "${item.title}" 吗？\n这会同时影响浏览器其它地方的历史记录。`)) {
+  const handleDelete = async () => {
+    if (
+      !(await confirmDialog({
+        title: `从浏览器历史中删除「${item.title}」？`,
+        message: '这会同时影响浏览器其它地方的历史记录。',
+        danger: true,
+      }))
+    ) {
       return
     }
     void deleteHistoryUrl(item.url)
@@ -67,7 +74,7 @@ export function HistoryCardItem({ item }: Props) {
       label: '从历史删除',
       icon: <MenuIcons.Trash />,
       danger: true,
-      onSelect: handleDelete,
+      onSelect: () => void handleDelete(),
     },
   ]
 

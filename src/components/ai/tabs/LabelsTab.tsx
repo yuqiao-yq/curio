@@ -15,6 +15,7 @@ import {
 } from '../../../ai/types'
 import { useAIPanelStore } from '../../../ai/panel/usePanelStore'
 import { toast } from '../../../stores/useToastStore'
+import { confirmDialog, promptDialog } from '../../Dialog'
 import { cn } from '../../../utils/cn'
 
 /**
@@ -771,7 +772,15 @@ function ManageSection() {
   }
 
   const handleRemove = async (tag: string) => {
-    if (!window.confirm(`确认从全库移除标签「${tag}」？`)) return
+    if (
+      !(await confirmDialog({
+        title: `删除标签「${tag}」？`,
+        message: '将从全库所有卡片中移除此标签（仅清除关联，不删除卡片）。',
+        confirmText: '删除',
+        danger: true,
+      }))
+    )
+      return
     await removeTag(tag)
     setSelected((prev) => {
       const next = new Set(prev)
@@ -784,10 +793,13 @@ function ManageSection() {
   const handleMerge = async () => {
     if (selected.size < 2) return
     const list = Array.from(selected)
-    const target = window.prompt(
-      `把以下 ${list.length} 个标签合并到一个目标标签：\n${list.join(', ')}\n\n请输入目标标签名（可以是其中之一，也可以是新名）：`,
-      list[0],
-    )
+    const target = await promptDialog({
+      title: `合并 ${list.length} 个标签`,
+      message: `将合并：${list.join(', ')}\n请输入目标标签名（可以是其中之一，也可以是新名）`,
+      defaultValue: list[0],
+      placeholder: '目标标签名',
+      validate: (v) => (v.trim() ? null : '请输入目标标签名'),
+    })
     if (!target?.trim()) return
     const t = target.trim()
     await mergeTags(list, t)

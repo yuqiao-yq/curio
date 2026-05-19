@@ -12,6 +12,7 @@ import type { ChatMessage } from '../../../ai/types'
 import { useBookmarkStore } from '../../../stores/useBookmarkStore'
 import { usePageIndex } from '../../../ai/services/usePageIndex'
 import { toast } from '../../../stores/useToastStore'
+import { confirmDialog } from '../../Dialog'
 import { cn } from '../../../utils/cn'
 
 /**
@@ -196,9 +197,16 @@ export function ChatTab({ tabId }: { tabId: string }) {
     abortRef.current?.abort()
   }
 
-  const handleClear = () => {
+  const handleClear = async () => {
     if (messages.length === 0) return
-    if (!window.confirm('清空当前对话？')) return
+    if (
+      !(await confirmDialog({
+        title: '清空当前对话？',
+        message: '当前 tab 内的所有消息将被清除。',
+        danger: true,
+      }))
+    )
+      return
     updateMessages([])
   }
 
@@ -283,7 +291,7 @@ export function ChatTab({ tabId }: { tabId: string }) {
       <ChatHeader
         modelName={currentChatProvider?.model}
         canClear={messages.length > 0}
-        onClear={handleClear}
+        onClear={() => void handleClear()}
         onExport={handleExport}
         ragEnabled={ragEnabled}
         ragAvailable={hasIndexed}

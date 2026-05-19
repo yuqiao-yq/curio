@@ -5,6 +5,7 @@ import { BookmarkGrid } from '../../src/components/BookmarkGrid'
 import { Breadcrumb } from '../../src/components/Breadcrumb'
 import { Topbar } from '../../src/components/Topbar'
 import { ToastContainer } from '../../src/components/ToastContainer'
+import { DialogHost } from '../../src/components/Dialog'
 import { toast } from '../../src/stores/useToastStore'
 import { AIFAB } from '../../src/components/ai/AIFAB'
 import { AIPanel } from '../../src/components/ai/AIPanel'
@@ -149,6 +150,8 @@ export default function App() {
   return (
     <div className="h-full w-full flex flex-col">
       <ToastContainer />
+      {/* 全局 confirm/prompt 替代浏览器原生弹窗（v0.20.1+） */}
+      <DialogHost />
       {/* AI 浮窗与 FAB 两者互斥：浮窗显示时 FAB 隐藏（在 AIFAB 内部判断） */}
       <AIFAB
         hasNew={hasPassiveHint}

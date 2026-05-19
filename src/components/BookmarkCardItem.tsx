@@ -11,6 +11,7 @@ import { isImageIcon } from '../utils/icon'
 import { CardMenu, MenuIcons, type CardMenuItem } from './CardMenu'
 import { FaviconImg } from './FaviconImg'
 import { RelatedReadingDialog } from './RelatedReadingDialog'
+import { confirmDialog, promptDialog } from './Dialog'
 
 interface Props {
   card: BookmarkCard
@@ -146,17 +147,28 @@ export function BookmarkCardItem({
     setEditing(false)
   }
 
-  const handleEditNote = () => {
-    const next = window.prompt(
-      card.description ? '编辑备注' : '为该书签添加备注',
-      card.description ?? '',
-    )
+  const handleEditNote = async () => {
+    const next = await promptDialog({
+      title: card.description ? '编辑备注' : '为该书签添加备注',
+      defaultValue: card.description ?? '',
+      placeholder: '一句话描述这个书签…',
+      allowEmpty: true,
+      multiline: true,
+    })
     if (next === null) return
     void updateCard(card.id, { description: next.trim() || undefined })
   }
 
-  const handleDelete = () => {
-    if (window.confirm(`删除「${card.title}」？`)) void removeCard(card.id)
+  const handleDelete = async () => {
+    if (
+      await confirmDialog({
+        title: `删除「${card.title}」？`,
+        message: card.url,
+        confirmText: '删除',
+        danger: true,
+      })
+    )
+      void removeCard(card.id)
   }
 
   // 编辑模式下：解绑 dnd 拖拽 listeners、禁用整卡 click
@@ -330,7 +342,7 @@ export function BookmarkCardItem({
                   key: 'note',
                   label: card.description ? '编辑备注' : '添加备注',
                   icon: <MenuIcons.Note />,
-                  onSelect: handleEditNote,
+                  onSelect: () => void handleEditNote(),
                 },
                 {
                   key: 'related',
@@ -343,7 +355,7 @@ export function BookmarkCardItem({
                   label: '删除',
                   icon: <MenuIcons.Trash />,
                   danger: true,
-                  onSelect: handleDelete,
+                  onSelect: () => void handleDelete(),
                 } satisfies CardMenuItem,
               ]}
             />
@@ -385,7 +397,7 @@ export function BookmarkCardItem({
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              handleEditNote()
+              void handleEditNote()
             }}
             onPointerDown={(e) => e.stopPropagation()}
             className={cn(
@@ -404,7 +416,7 @@ export function BookmarkCardItem({
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              handleEditNote()
+              void handleEditNote()
             }}
             onPointerDown={(e) => e.stopPropagation()}
             className={cn(
