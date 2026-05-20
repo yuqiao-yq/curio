@@ -120,13 +120,17 @@ export function BookmarkCardItem({
    * 卡片 transform 穿过主区边界后会被 main 直接 clip 掉。
    *
    * DragOverlay 把"被拖中的卡片视觉"portal 到 <body>，逃出 main 的裁剪，
-   * 同时自带 dropAnimation（吸附效果）。原 sortable 元素只剩占位的"幽灵"
-   * 让用户看到来源。
+   * 同时自带 dropAnimation（吸附效果）。
+   *
+   * v0.21.14：isDragging 时 opacity 0 让原 active 元素彻底不可见
+   *（之前 0.3 ghost 在"前拖"方向的 sortable transform 让位 + 松手重置
+   * 链路里会产生可见的中间帧 → 闪烁；后拖方向因 transform 方向恰好抵消
+   * 没事）。0 全方向消除中间帧，反正用户看的是 DragOverlay 的浮层。
    */
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.3 : 1,
+    opacity: isDragging ? 0 : 1,
   }
 
   const openUrl = () => {

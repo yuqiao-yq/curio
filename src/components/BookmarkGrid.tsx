@@ -1,6 +1,7 @@
 import {
   DndContext,
   DragOverlay,
+  MeasuringStrategy,
   PointerSensor,
   closestCenter,
   useSensor,
@@ -14,6 +15,7 @@ import {
   rectSortingStrategy,
 } from '@dnd-kit/sortable'
 import { useEffect, useMemo, useState } from 'react'
+import { flushSync } from 'react-dom'
 import type { BookmarkCard, Category } from '../types/bookmark'
 import { useBookmarkStore } from '../stores/useBookmarkStore'
 import { useDropHintStore, findDropTargetAt } from '../stores/useDropHintStore'
@@ -377,7 +379,7 @@ function CategorySection({
     setActiveCardId(null)
   }
 
-  const handleDragEnd = async (e: DragEndEvent) => {
+  const handleDragEnd = (e: DragEndEvent) => {
     const { active, over } = e
     const hint = useDropHintStore.getState().hoverCategoryId
     useDropHintStore.getState().set(null)
@@ -387,31 +389,42 @@ function CategorySection({
     if (hint && hint !== category.id) {
       const cardId = active.id as string
       const targetCount = allCards.filter((c) => c.categoryId === hint).length
-      try {
-        await moveCard(cardId, hint, targetCount)
-        const targetCat = allCategories.find((c) => c.id === hint)
-        if (targetCat) {
-          toast.success(
-            '已移动书签',
-            `→「${targetCat.name}」（追加到末尾）`,
-          )
-        }
-      } catch (err) {
-        toast.error(
-          '移动失败',
-          err instanceof Error ? err.message : '未知错误',
+      // 跨分类一样用 flushSync，让 React 在 dnd-kit cleanup 前完成 DOM 重排
+      flushSync(() => {
+        void moveCard(cardId, hint, targetCount)
+      })
+      const targetCat = allCategories.find((c) => c.id === hint)
+      if (targetCat) {
+        toast.success(
+          '已移动书签',
+          `→「${targetCat.name}」（追加到末尾）`,
         )
       }
       return
     }
 
-    // 2) 同分类排序（原逻辑）
+    // 2) 同分类排序
     if (!over || active.id === over.id) return
     const ids = directCards.map((c) => c.id)
     const oldIdx = ids.indexOf(active.id as string)
     const newIdx = ids.indexOf(over.id as string)
     if (oldIdx === -1 || newIdx === -1) return
-    await reorder(category.id, arrayMove(ids, oldIdx, newIdx))
+    /**
+     * v0.21.14：flushSync 强制 React state 更新在 dnd-kit cleanup 前完成。
+     *
+     * 不加 flushSync 时的时序：
+     *   dnd-kit cleanup（transform reset → 一帧旧顺序 + 旧位置）
+     *   → React batched rerender（异步 → 一帧新顺序）
+     *   → 用户看到两帧切换 = 闪烁
+     *   往前拖时由于 reorder 方向与 React DOM 重排方向冲突，闪烁更明显；
+     *   往后拖恰好一致，看起来"连贯"。
+     *
+     * flushSync 后：React 强制同步 rerender，cleanup 时 DOM 已是新顺序，
+     * 让位 items 的新 transform 直接落在正确位置，无 1-frame 闪烁。
+     */
+    flushSync(() => {
+      void reorder(category.id, arrayMove(ids, oldIdx, newIdx))
+    })
   }
 
   /* ─── 描述编辑（v0.21.2：子 section header 上点击描述触发） ─── */
@@ -662,6 +675,13 @@ function CategorySection({
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 onDragCancel={handleDragCancel}
+                // v0.21.14：MeasuringStrategy.Always 让 dnd-kit 在每次 rerender
+                // 后立即重新测量 droppable rects。
+                // 默认 WhileDragging 策略下，松手 + React rerender 后 DOM 已重排
+                // 到新位置，但 sortable 内部的 rect 缓存还是旧位置，导致计算出
+                // 非 0 的 transform 把 active 卡片"推"超出新位置再修正回来 →
+                // 用户看到"卡片超出原前面位置然后回到前面位置"的来回动画。
+                measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
               >
                 <SortableContext
                   items={directCards.map((c) => c.id)}
@@ -684,20 +704,22 @@ function CategorySection({
                   </div>
                 </SortableContext>
                 {/* v0.21.4 DragOverlay：把拖拽中的卡片视觉 portal 到 <body>，
-                    逃出 main 容器 overflow 的裁剪——主诉求"被左侧菜单栏遮挡"
-                    的根因是 main overflow-y:auto 强制 overflow-x 也变 auto，
-                    transform 出主区边界会被 clip 掉。Portal 到 body 后无 clip。
+                    逃出 main 容器 overflow 的裁剪。
 
-                    dropAnimation：松手时 overlay 平滑回到原 sortable 元素位置
-                    （同分类排序时这就是新位置；跨分类时是源位置，180ms 内消失）。
-                    带来用户提到的"吸附效果"。 */}
-                <DragOverlay
-                  dropAnimation={{
-                    duration: 200,
-                    easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)',
-                  }}
-                  zIndex={9999}
-                >
+                    v0.21.14 一路演进：
+                    - 一开始默认 dropAnimation 会让 overlay 飞回 active.rect，
+                      但 v0.21.4 时 active.rect 留在源位置 → 看似"飞回源位置"
+                    - 临时改 dropAnimation=null 去掉飞回 → 但 active 卡片在
+                      新位置 opacity 0→1 瞬间出现 → 用户感知"闪烁"
+                    - 真正的修复链路：
+                      · 乐观 setState（store action 先 set 再 await DB）
+                      · flushSync 强制 React rerender 在 dnd-kit cleanup 前完成
+                      · MeasuringStrategy.Always 让 rect 缓存同步
+                      ↑ 三个加起来让 cleanup 时 active.rect 已经是新位置
+                    - 此时恢复 dnd-kit 默认 dropAnimation 才正常：
+                      浮层从指针位置平滑过渡到"新位置"的 active.rect → 自然吸附
+                      active 元素同时 opacity 0→1 在新位置等着，无突兀 */}
+                <DragOverlay zIndex={9999}>
                   {activeCardId
                     ? (() => {
                         const card = allCards.find((c) => c.id === activeCardId)

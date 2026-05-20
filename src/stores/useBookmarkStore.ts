@@ -618,8 +618,12 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
       fromGroup.forEach((c, i) => (c.order = i))
     }
 
-    await getRepository().saveCards(cards)
+    // v0.21.14：先 setState 再 await 持久化（乐观更新）。
+    // 之前先 await saveCards 才 set，IndexedDB 写入 ~几十毫秒期间
+    // React state 仍是旧顺序，dnd-kit 结束拖拽后 sortable transform 重置 →
+    // 卡片视觉先回原位再过渡到新位置 → 用户看到闪烁抖动。
     set({ cards })
+    await getRepository().saveCards(cards)
   },
 
   async reorderCardsInCategory(categoryId, orderedIds) {
@@ -630,10 +634,11 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
         c.order = idxMap.get(c.id)!
       }
     })
+    // v0.21.14：乐观更新，先 setState 让 sortable 立即应用新顺序
+    set({ cards })
     await getRepository().saveCards(
       cards.filter((c) => c.categoryId === categoryId)
     )
-    set({ cards })
   },
 
   async recordRecentOpen(cardId) {
