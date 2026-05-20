@@ -69,6 +69,14 @@ export interface UserSettings {
    * 隐私敏感，默认关闭，需要用户在 UI 中主动开启。
    */
   recentIncludeBrowserHistory?: boolean
+  /**
+   * 当前分类内的子文件夹 section 是否默认展开。
+   * - false / undefined（默认）：子 section 默认折叠（点击 header 才展开）
+   * - true：子 section 默认展开，进入分类立即看到子文件夹的全部书签
+   *
+   * 老用户保持原行为（默认折叠），需要在样式管理里主动开启展开。
+   */
+  subSectionDefaultExpanded?: boolean
 }
 
 /** 左侧分类栏宽度边界（与 CategorySidebar 中的拖拽限制保持一致） */

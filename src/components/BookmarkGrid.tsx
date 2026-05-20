@@ -317,10 +317,16 @@ function CategorySection({
   const showCompactHeader = headerVariant === 'compact'
 
   // section 自身的折叠状态（compact / full 两种 header 都能切换）
-  // - full header（子 section）：默认折叠，配合"切换分类时只展开根目录的书签"产品行为
+  // - full header（子 section）：默认折叠（v0.21.15 起可在样式管理里开关，
+  //   设置 subSectionDefaultExpanded=true 后默认展开；保持原行为对老用户兼容）
   // - compact header（根 section）：默认展开，让用户切到分类后立刻看到该分类的书签
   // BookmarkGrid 通过 key 中带 activeCategoryId 让本组件在切换时 remount 回到默认态
-  const [collapsed, setCollapsed] = useState(showFullHeader)
+  const subSectionDefaultExpanded = useBookmarkStore(
+    (s) => s.settings.subSectionDefaultExpanded ?? false,
+  )
+  const [collapsed, setCollapsed] = useState(
+    showFullHeader ? !subSectionDefaultExpanded : false,
+  )
   // v0.21.4：DragOverlay 需要的"当前被拖卡片 id"
   const [activeCardId, setActiveCardId] = useState<string | null>(null)
 

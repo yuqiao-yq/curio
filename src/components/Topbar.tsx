@@ -943,6 +943,38 @@ function StyleDialog({
             该颜色仅影响"未单独设色"的文字（如卡片标题等）；按钮主色、辅助灰字等带有自身样式的元素不会被覆盖。
           </p>
         </section>
+
+        {/* 排版偏好（v0.21.15）：子文件夹 section 的默认展开/折叠 */}
+        <section>
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+            排版偏好
+          </h4>
+          <label
+            className={cn(
+              'flex items-start gap-3 px-3 py-2.5 rounded-md cursor-pointer',
+              'border border-slate-200 dark:border-slate-700',
+              'hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors',
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={settings.subSectionDefaultExpanded ?? false}
+              onChange={(e) =>
+                void onUpdate({ subSectionDefaultExpanded: e.target.checked })
+              }
+              className="mt-0.5 w-4 h-4 accent-brand cursor-pointer shrink-0"
+            />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm text-slate-700 dark:text-slate-200">
+                子文件夹默认展开
+              </div>
+              <div className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                开启后，进入分类时其下所有子文件夹的书签 section 自动展开（一眼看到全部内容）。
+                关闭则默认折叠，需要时点 header 展开。
+              </div>
+            </div>
+          </label>
+        </section>
       </div>
     </DialogShell>
   )
