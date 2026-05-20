@@ -86,19 +86,20 @@ export function RelatedReadingDialog({
   if (typeof document === 'undefined') return null
   return createPortal(
     <div
-      className="fixed inset-0 z-[10180] flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-[10180] flex items-center justify-center bg-black/40 p-4"
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          'w-[440px] max-w-[92vw] rounded-lg shadow-2xl',
+          // v0.21.16：max-h 自适应屏幕；flex 让 Header 固定、Body 滚动
+          'w-[440px] max-w-[92vw] max-h-[calc(100vh-2rem)] flex flex-col rounded-lg shadow-2xl',
           'bg-white dark:bg-slate-800',
           'border border-slate-200 dark:border-slate-700',
         )}
       >
-        {/* Header：目标卡 + ✕ */}
-        <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-start gap-3">
+        {/* Header：目标卡 + ✕（高度固定） */}
+        <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-start gap-3 shrink-0">
           <FaviconImg
             url={card.url}
             size={20}
@@ -134,8 +135,8 @@ export function RelatedReadingDialog({
           </button>
         </div>
 
-        {/* Body */}
-        <div className="px-4 py-3">
+        {/* Body（可滚动） */}
+        <div className="px-4 py-3 flex-1 min-h-0 overflow-y-auto">
           {state.kind === 'loading' && (
             <div className="text-center py-8 text-xs text-slate-400">
               正在计算相似度…

@@ -1448,24 +1448,25 @@ function CrawlPrivacyDialog({
 }) {
   return (
     <div
-      className="fixed inset-0 z-[10200] flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-[10200] flex items-center justify-center bg-black/40 p-4"
       onClick={onCancel}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          'w-[440px] max-w-[92vw] rounded-lg shadow-2xl',
+          // v0.21.16：max-h 自适应屏幕 + 内部滚动
+          'w-[440px] max-w-[92vw] max-h-[calc(100vh-2rem)] flex flex-col rounded-lg shadow-2xl',
           'bg-white dark:bg-slate-800',
           'border border-slate-200 dark:border-slate-700',
         )}
       >
-        <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-700">
+        <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-700 shrink-0">
           <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
             <span aria-hidden>🔒</span>
             内容抓取隐私说明
           </h3>
         </div>
-        <div className="px-5 py-4 space-y-3 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+        <div className="px-5 py-4 space-y-3 text-xs text-slate-600 dark:text-slate-300 leading-relaxed flex-1 min-h-0 overflow-y-auto">
           <p>
             Tab It 即将代你访问已收藏的{' '}
             <span className="font-semibold text-brand tabular-nums">
@@ -1498,7 +1499,7 @@ function CrawlPrivacyDialog({
             实际行为由本扩展严格自我约束。
           </p>
         </div>
-        <div className="px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-200 dark:border-slate-700">
+        <div className="px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-200 dark:border-slate-700 shrink-0">
           <button
             type="button"
             onClick={onCancel}

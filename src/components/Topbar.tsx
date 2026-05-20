@@ -336,20 +336,21 @@ function DialogShell({
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4"
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         style={{ width }}
         className={cn(
-          'max-w-[92vw] rounded-lg shadow-2xl',
+          // v0.21.16：max-h 用 vh 自适应屏幕；flex 让 head/footer 固定、body 滚动
+          'max-w-[92vw] max-h-[calc(100vh-2rem)] flex flex-col rounded-lg shadow-2xl',
           'bg-white dark:bg-slate-800',
           'border border-slate-200 dark:border-slate-700',
         )}
       >
-        {/* 头 */}
-        <div className="px-5 py-3 flex items-center justify-between border-b border-slate-200 dark:border-slate-700">
+        {/* 头（高度固定） */}
+        <div className="px-5 py-3 flex items-center justify-between border-b border-slate-200 dark:border-slate-700 shrink-0">
           <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100">
             {title}
           </h3>
@@ -367,10 +368,12 @@ function DialogShell({
             ✕
           </button>
         </div>
-        {/* 体 */}
-        <div className="px-5 py-4">{children}</div>
-        {/* 底 */}
-        <div className="px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-200 dark:border-slate-700">
+        {/* 体（撑满剩余 + 内部滚动；min-h-0 是 flex 子节点正确滚动的必要条件） */}
+        <div className="px-5 py-4 flex-1 min-h-0 overflow-y-auto">
+          {children}
+        </div>
+        {/* 底（高度固定） */}
+        <div className="px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-200 dark:border-slate-700 shrink-0">
           {footer ?? (
             <button
               type="button"
@@ -998,19 +1001,20 @@ function ImportDialog({
 }) {
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4"
       onClick={onCancel}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          'w-[420px] max-w-[90vw] rounded-lg shadow-2xl',
+          // v0.21.16：max-h 自适应屏幕 + 内部滚动
+          'w-[420px] max-w-[90vw] max-h-[calc(100vh-2rem)] flex flex-col rounded-lg shadow-2xl',
           'bg-white dark:bg-slate-800',
           'border border-slate-200 dark:border-slate-700',
         )}
       >
-        {/* 头 */}
-        <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-700">
+        {/* 头（固定） */}
+        <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-700 shrink-0">
           <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100">
             导入书签数据
           </h3>
@@ -1019,8 +1023,8 @@ function ImportDialog({
           </p>
         </div>
 
-        {/* 体 */}
-        <div className="px-5 py-4 space-y-3">
+        {/* 体（可滚动） */}
+        <div className="px-5 py-4 space-y-3 flex-1 min-h-0 overflow-y-auto">
           <div className="text-sm text-slate-600 dark:text-slate-300">
             检测到{' '}
             <span className="font-medium text-brand">{pending.catCount}</span>{' '}
@@ -1052,8 +1056,8 @@ function ImportDialog({
           </div>
         </div>
 
-        {/* 底 */}
-        <div className="px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-200 dark:border-slate-700">
+        {/* 底（固定） */}
+        <div className="px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-200 dark:border-slate-700 shrink-0">
           <button
             type="button"
             disabled={importing}

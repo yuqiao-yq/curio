@@ -163,13 +163,14 @@ function DialogView({
 
   return (
     <div
-      className="fixed inset-0 z-[10200] flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-[10200] flex items-center justify-center bg-black/40 p-4"
       onClick={cancel}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          'w-[400px] max-w-[92vw] rounded-lg shadow-2xl',
+          // v0.21.16：max-h 用 vh 自适应屏幕；flex 让 Header/Footer 固定、中间内容滚动
+          'w-[400px] max-w-[92vw] max-h-[calc(100vh-2rem)] flex flex-col rounded-lg shadow-2xl',
           'bg-white dark:bg-slate-800',
           'border border-slate-200 dark:border-slate-700',
         )}
@@ -215,11 +216,14 @@ function ConfirmBody({
   return (
     <>
       <Header title={title} onClose={onCancel} />
-      {message && (
-        <div className="px-5 py-3 text-xs text-slate-500 dark:text-slate-400 leading-relaxed whitespace-pre-wrap break-words">
-          {message}
-        </div>
-      )}
+      {/* 中间内容可滚动；message 极少超长，但极端场景下也能 fallback 滚动 */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {message && (
+          <div className="px-5 py-3 text-xs text-slate-500 dark:text-slate-400 leading-relaxed whitespace-pre-wrap break-words">
+            {message}
+          </div>
+        )}
+      </div>
       <Footer>
         <button
           type="button"
@@ -330,7 +334,8 @@ function PromptBody({
   return (
     <>
       <Header title={title} onClose={onCancel} />
-      <div className="px-5 py-3 space-y-2">
+      {/* 中间输入区可滚动（长 message + multiline textarea 时尤为必要） */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-3 space-y-2">
         {message && (
           <div className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed whitespace-pre-wrap break-words">
             {message}
@@ -416,7 +421,7 @@ function PromptBody({
 
 function Header({ title, onClose }: { title: string; onClose: () => void }) {
   return (
-    <div className="px-5 py-3 flex items-start justify-between gap-3 border-b border-slate-200 dark:border-slate-700">
+    <div className="px-5 py-3 flex items-start justify-between gap-3 border-b border-slate-200 dark:border-slate-700 shrink-0">
       <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 leading-tight whitespace-pre-wrap break-words">
         {title}
       </h3>
@@ -439,7 +444,7 @@ function Header({ title, onClose }: { title: string; onClose: () => void }) {
 
 function Footer({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-200 dark:border-slate-700">
+    <div className="px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-200 dark:border-slate-700 shrink-0">
       {children}
     </div>
   )
