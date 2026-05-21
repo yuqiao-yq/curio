@@ -5,6 +5,10 @@ import { toast } from '../stores/useToastStore'
 import { getRepository } from '../repositories'
 import type { ExportData, UserSettings } from '../types/bookmark'
 import type { BulkImportMode } from '../repositories/types'
+import type {
+  BrowserSyncRoot,
+  ExportResult,
+} from '../services/bookmarkExporter'
 import { cn } from '../utils/cn'
 import { WebSearchBox } from './WebSearchBox'
 import { CardMenu } from './CardMenu'
@@ -31,6 +35,7 @@ interface PendingImport {
 
 export function Topbar() {
   const importFromBrowser = useBookmarkStore((s) => s.importFromBrowser)
+  const exportToBrowser = useBookmarkStore((s) => s.exportToBrowser)
   const init = useBookmarkStore((s) => s.init)
   const settings = useBookmarkStore((s) => s.settings)
   const updateSettings = useBookmarkStore((s) => s.updateSettings)
@@ -46,6 +51,9 @@ export function Topbar() {
   const [aboutDialogOpen, setAboutDialogOpen] = useState(false)
   // 帮助文档弹窗（齿轮左侧的「?」按钮触发）
   const [helpDialogOpen, setHelpDialogOpen] = useState(false)
+  // 同步到浏览器：确认弹窗 + 进度态
+  const [exportDialogOpen, setExportDialogOpen] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   const handleExport = async () => {
     try {
@@ -173,6 +181,54 @@ export function Topbar() {
     }
   }
 
+  /**
+   * 「同步到浏览器书签」执行入口：用户在子弹窗确认参数后调用。
+   * - 镜像模式：在选定根目录下的 folderName 文件夹内重建 Tab It 结构
+   * - 完成后给出新增 / 更新 / 清理 三段式 toast 反馈
+   */
+  const handleExportToBrowser = async (params: {
+    root: BrowserSyncRoot
+    folderName: string
+  }) => {
+    setExporting(true)
+    try {
+      const result: ExportResult = await exportToBrowser(params)
+      const created = result.foldersCreated + result.bookmarksCreated
+      const summaryParts = [
+        `新增 ${result.foldersCreated} 文件夹 / ${result.bookmarksCreated} 书签`,
+        `更新 ${result.nodesUpdated} 项`,
+        `清理 ${result.nodesRemoved} 项`,
+      ]
+      const detail = summaryParts.join(' · ')
+      if (result.errors.length > 0) {
+        // 有失败但整体跑完 → warn 风格（这里 toast 没有 warn，用 info 并标注）
+        console.warn('[exportToBrowser] errors:', result.errors)
+        toast.info(
+          '同步完成（含错误）',
+          `${detail}\n${result.errors.length} 项失败，详情见 Console`,
+        )
+      } else if (created === 0 && result.nodesUpdated === 0 && result.nodesRemoved === 0) {
+        toast.info(
+          '浏览器书签已是最新',
+          `镜像目录「${params.folderName}」与 Tab It 一致，无需变更`,
+        )
+      } else {
+        toast.success('已同步到浏览器书签', detail)
+      }
+      setExportDialogOpen(false)
+    } catch (err) {
+      console.error(err)
+      toast.error(
+        '同步失败',
+        err instanceof Error
+          ? err.message
+          : '未知错误（请确认已授权 bookmarks 权限）',
+      )
+    } finally {
+      setExporting(false)
+    }
+  }
+
   // 包装一层：执行后自动关闭数据管理面板，避免再点一次
   const runAndCloseData = (fn: () => void | Promise<void>) => async () => {
     setDataDialogOpen(false)
@@ -254,14 +310,30 @@ export function Topbar() {
         />
       </div>
 
-      {/* 数据管理弹窗：3 个数据操作项 */}
+      {/* 数据管理弹窗：4 个数据操作项 */}
       {dataDialogOpen &&
         createPortal(
           <DataDialog
             onClose={() => setDataDialogOpen(false)}
             onImportFromBrowser={runAndCloseData(handleImportFromBrowser)}
+            onExportToBrowser={runAndCloseData(() => {
+              setExportDialogOpen(true)
+            })}
             onImportJson={runAndCloseData(handleImport)}
             onExportJson={runAndCloseData(handleExport)}
+          />,
+          document.body,
+        )}
+
+      {/* 同步到浏览器书签：参数确认弹窗 */}
+      {exportDialogOpen &&
+        createPortal(
+          <ExportToBrowserDialog
+            defaultRoot={settings.browserSyncRoot ?? 'bookmarks_bar'}
+            defaultFolderName={settings.browserSyncFolderName ?? 'Tab It'}
+            exporting={exporting}
+            onCancel={() => !exporting && setExportDialogOpen(false)}
+            onConfirm={handleExportToBrowser}
           />,
           document.body,
         )}
@@ -468,11 +540,13 @@ function InfoRow({
 function DataDialog({
   onClose,
   onImportFromBrowser,
+  onExportToBrowser,
   onImportJson,
   onExportJson,
 }: {
   onClose: () => void
   onImportFromBrowser: () => void
+  onExportToBrowser: () => void
   onImportJson: () => void
   onExportJson: () => void
 }) {
@@ -494,6 +568,12 @@ function DataDialog({
           onClick={onImportFromBrowser}
         />
         <ActionItem
+          icon="🔄"
+          title="同步到浏览器书签"
+          desc="把当前所有分类与书签镜像到浏览器原生书签的指定文件夹中。"
+          onClick={onExportToBrowser}
+        />
+        <ActionItem
           icon="📥"
           title="导入配置文件"
           desc="选择 JSON 配置文件，支持「合并」或「替换」两种模式。"
@@ -505,6 +585,187 @@ function DataDialog({
           desc="将当前所有分类、书签、设置打包为 JSON 下载到本地。"
           onClick={onExportJson}
         />
+      </div>
+    </DialogShell>
+  )
+}
+
+// ─── 同步到浏览器：参数确认弹层 ───────────────────
+/**
+ * 同步前的参数确认弹窗：
+ * - root         ：写到「书签栏」还是「其他书签」
+ * - folderName   ：根文件夹名（默认 Tab It），避免污染用户已有书签
+ * - 含一条强提醒：镜像模式 = 该文件夹内的多余项会被自动清理
+ */
+function ExportToBrowserDialog({
+  defaultRoot,
+  defaultFolderName,
+  exporting,
+  onCancel,
+  onConfirm,
+}: {
+  defaultRoot: BrowserSyncRoot
+  defaultFolderName: string
+  exporting: boolean
+  onCancel: () => void
+  onConfirm: (params: {
+    root: BrowserSyncRoot
+    folderName: string
+  }) => void
+}) {
+  const [root, setRoot] = useState<BrowserSyncRoot>(defaultRoot)
+  const [folderName, setFolderName] = useState(defaultFolderName)
+  const trimmed = folderName.trim()
+  const invalid = trimmed.length === 0 || trimmed.length > 60
+
+  return (
+    <DialogShell
+      title={
+        <span className="flex items-center gap-2">
+          <span className="text-base">🔄</span>
+          <span>同步到浏览器书签</span>
+        </span>
+      }
+      width={520}
+      onClose={onCancel}
+      footer={
+        <>
+          <button
+            type="button"
+            disabled={exporting}
+            onClick={onCancel}
+            className={cn(
+              'px-3 py-1.5 text-sm rounded transition-colors',
+              'text-slate-600 dark:text-slate-300',
+              'hover:bg-slate-100 dark:hover:bg-slate-700/60',
+              exporting && 'opacity-50 cursor-not-allowed',
+            )}
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            disabled={exporting || invalid}
+            onClick={() => onConfirm({ root, folderName: trimmed })}
+            className={cn(
+              'px-3 py-1.5 text-sm rounded font-medium transition-colors',
+              'bg-brand text-white hover:bg-brand-600',
+              (exporting || invalid) && 'opacity-50 cursor-not-allowed',
+            )}
+          >
+            {exporting ? '同步中…' : '开始同步'}
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {/* 目标根：书签栏 / 其他书签 */}
+        <section>
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+            写入位置
+          </h4>
+          <div className="grid grid-cols-2 gap-2">
+            {(
+              [
+                {
+                  key: 'bookmarks_bar',
+                  label: '书签栏',
+                  desc: '顶部工具栏可见',
+                  icon: '📌',
+                },
+                {
+                  key: 'other',
+                  label: '其他书签',
+                  desc: '收纳在书签管理器',
+                  icon: '📁',
+                },
+              ] as const
+            ).map((opt) => {
+              const active = root === opt.key
+              return (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setRoot(opt.key)}
+                  className={cn(
+                    'flex items-start gap-2 px-3 py-2.5 rounded-md border text-left transition-all',
+                    active
+                      ? 'border-brand bg-brand/5 dark:bg-brand/10'
+                      : 'border-slate-200 dark:border-slate-700 hover:border-brand/40 hover:bg-slate-50 dark:hover:bg-slate-700/40',
+                  )}
+                >
+                  <span className="text-lg leading-none mt-0.5 shrink-0">
+                    {opt.icon}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div
+                      className={cn(
+                        'text-sm',
+                        active
+                          ? 'text-brand font-medium'
+                          : 'text-slate-700 dark:text-slate-200',
+                      )}
+                    >
+                      {opt.label}
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      {opt.desc}
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </section>
+
+        {/* 根文件夹名 */}
+        <section>
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+            根文件夹名
+          </h4>
+          <input
+            type="text"
+            value={folderName}
+            onChange={(e) => setFolderName(e.target.value)}
+            placeholder="Tab It"
+            spellCheck={false}
+            disabled={exporting}
+            className={cn(
+              'w-full px-3 py-1.5 text-sm rounded-md',
+              'border border-slate-200 dark:border-slate-700',
+              'bg-white dark:bg-slate-900',
+              'outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 transition-all',
+              'placeholder:text-slate-400',
+              invalid && 'border-red-300 dark:border-red-500/60',
+              exporting && 'opacity-50 cursor-not-allowed',
+            )}
+          />
+          <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+            会在选定位置下复用 / 创建该文件夹，所有 Tab It 数据都收纳在其中，
+            避免污染你原有的书签结构。
+          </p>
+        </section>
+
+        {/* 行为说明（强提醒） */}
+        <section
+          className={cn(
+            'rounded-md px-3 py-2.5 text-[12px] leading-relaxed',
+            'bg-amber-50 dark:bg-amber-500/10',
+            'border border-amber-200 dark:border-amber-500/30',
+            'text-amber-700 dark:text-amber-200',
+          )}
+        >
+          <div className="font-medium mb-1">⚠ 镜像同步说明</div>
+          <ul className="list-disc pl-4 space-y-0.5">
+            <li>同步方向为单向：Tab It → 浏览器（不读取浏览器侧的改动）</li>
+            <li>
+              会保持「<span className="font-mono">{trimmed || 'Tab It'}</span>
+              」文件夹与 Tab It 数据完全一致：
+              <span className="font-medium">该文件夹下的多余项会被自动清理</span>
+            </li>
+            <li>不影响该文件夹之外的任何浏览器原有书签</li>
+          </ul>
+        </section>
       </div>
     </DialogShell>
   )

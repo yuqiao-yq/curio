@@ -5,6 +5,11 @@ import type { BookmarkCard, Category, UserSettings } from '../types/bookmark'
 import { DEFAULT_SETTINGS } from '../types/bookmark'
 import { getRepository } from '../repositories'
 import { importFromBrowserBookmarks } from '../services/bookmarkImporter'
+import {
+  exportToBrowserBookmarks,
+  type ExportOptions,
+  type ExportResult,
+} from '../services/bookmarkExporter'
 
 /** browser.storage.local key（与 LocalRepository 的 KEYS 平级，专给"最近使用"使用） */
 const RECENT_ENTRIES_KEY = 'tabit:recent'
@@ -69,6 +74,13 @@ interface BookmarkState {
     cardsAdded: number
     cardsSkipped: number
   }>
+  /**
+   * 把当前所有 categories + cards 同步到浏览器原生书签（镜像模式）。
+   * - 在 options.root（书签栏 / 其他书签）下的 options.folderName 子文件夹内镜像
+   * - 会把新生成的 bookmarkId 回写到对应 Category / BookmarkCard 并持久化
+   * - 失败时抛原始 Error 由调用方 toast
+   */
+  exportToBrowser: (options: ExportOptions) => Promise<ExportResult>
   setActiveCategory: (id: string | null) => void
   setSearchKeyword: (kw: string) => void
 
@@ -280,6 +292,56 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     } finally {
       set({ loading: false })
     }
+  },
+
+  async exportToBrowser(options) {
+    const categories = get().categories
+    const cards = get().cards
+    const result = await exportToBrowserBookmarks(categories, cards, options)
+
+    // ─── bookmarkId 回写：仅对真正发生变化的实体批量持久化 ───
+    // 同步逻辑里 categoryIdToBookmarkId / cardIdToBookmarkId 是"最终态"映射，
+    // 这里和现有内存数据比较，过滤出真正需要持久化的差异，避免无谓写盘。
+    const now = Date.now()
+    const repo = getRepository()
+
+    const catsToSave: Category[] = []
+    const nextCats = categories.map((c) => {
+      const newId = result.categoryIdToBookmarkId.get(c.id)
+      if (!newId || newId === c.bookmarkId) return c
+      const updated = { ...c, bookmarkId: newId, updatedAt: now }
+      catsToSave.push(updated)
+      return updated
+    })
+
+    const cardsToSave: BookmarkCard[] = []
+    const nextCards = cards.map((c) => {
+      const newId = result.cardIdToBookmarkId.get(c.id)
+      if (!newId || newId === c.bookmarkId) return c
+      const updated = { ...c, bookmarkId: newId, updatedAt: now }
+      cardsToSave.push(updated)
+      return updated
+    })
+
+    if (catsToSave.length > 0) await repo.saveCategories(catsToSave)
+    if (cardsToSave.length > 0) await repo.saveCards(cardsToSave)
+    if (catsToSave.length > 0 || cardsToSave.length > 0) {
+      set({ categories: nextCats, cards: nextCards })
+    }
+
+    // 记忆用户偏好（下次默认沿用），不阻塞同步结果返回
+    const prev = get().settings
+    if (
+      prev.browserSyncRoot !== options.root ||
+      (prev.browserSyncFolderName ?? '') !== options.folderName
+    ) {
+      void get().updateSettings({
+        browserSyncRoot: options.root,
+        browserSyncFolderName: options.folderName,
+      })
+    }
+
+    return result
   },
 
   setActiveCategory(id) {

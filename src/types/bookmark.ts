@@ -17,6 +17,13 @@ export interface Category {
   /** 父分类 ID；undefined 或空字符串表示顶层 */
   parentId?: string
   order: number
+  /**
+   * 关联的浏览器原生书签文件夹 id。
+   * - 仅当用户开启「同步到浏览器书签」并完成过一次同步后才会写入
+   * - 同步逻辑会按此 id 复用浏览器原生文件夹，避免每次同步都重建（保留 dateAdded 等元信息）
+   * - 如果该 id 在浏览器中已不存在（用户手动删了），同步逻辑会按"同级同名"重新匹配并回写新 id
+   */
+  bookmarkId?: string
   createdAt: number
   updatedAt: number
 }
@@ -77,6 +84,20 @@ export interface UserSettings {
    * 老用户保持原行为（默认折叠），需要在样式管理里主动开启展开。
    */
   subSectionDefaultExpanded?: boolean
+
+  /**
+   * 「同步到浏览器书签」目标根：
+   * - 'bookmarks_bar'（默认）→ 书签栏（顶部常用）
+   * - 'other'              → 其他书签（不在书签栏可见）
+   * 仅记录用户偏好，实际写入时再解析为浏览器原生 id（不同浏览器 / 不同账号 id 不同）。
+   */
+  browserSyncRoot?: 'bookmarks_bar' | 'other'
+  /**
+   * 同步到浏览器时使用的根文件夹名（默认 'Tab It'）。
+   * 在 browserSyncRoot 下复用 / 创建该名称的文件夹，作为本扩展的镜像目录，
+   * 避免污染用户原有的书签结构。
+   */
+  browserSyncFolderName?: string
 }
 
 /** 左侧分类栏宽度边界（与 CategorySidebar 中的拖拽限制保持一致） */
