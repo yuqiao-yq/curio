@@ -33,10 +33,27 @@
 }
 
 @layer components {
+  /*
+   * .card 基础样式：边框 + 圆角 + 阴影 + 过渡。
+   * 视觉填充（毛玻璃 vs 实色）由 body 上的 modifier class 控制，
+   * 一处改、所有派生 .card 节点都会同步切换（BookmarkCardItem /
+   * FolderCard / HistoryCardItem / + 占位卡 / DragPreview）。
+   */
   .card {
-    @apply bg-white/70 dark:bg-slate-800/60 backdrop-blur;
     @apply border border-slate-200/60 dark:border-slate-700/60;
     @apply rounded-xl shadow-sm hover:shadow-md transition-all;
+    /* 默认 = 毛玻璃（半透明 + backdrop-blur） */
+    @apply bg-white/70 dark:bg-slate-800/60 backdrop-blur;
+  }
+
+  /*
+   * 用户在「样式管理 → 卡片毛玻璃」关闭时，body 加 .tabit-cards-solid，
+   * 切回纯实色背景，移除 backdrop-filter；对比度更好、渲染更轻。
+   */
+  body.tabit-cards-solid .card {
+    @apply bg-white dark:bg-slate-800;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   .btn {

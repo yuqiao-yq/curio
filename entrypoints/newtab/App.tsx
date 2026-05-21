@@ -28,6 +28,8 @@ export default function App() {
   const theme = useBookmarkStore((s) => s.settings.theme)
   const wallpaper = useBookmarkStore((s) => s.settings.wallpaper)
   const fontColor = useBookmarkStore((s) => s.settings.fontColor)
+  const backgroundBlur = useBookmarkStore((s) => s.settings.backgroundBlur)
+  const cardGlass = useBookmarkStore((s) => s.settings.cardGlass)
 
   // ─── AI 浮窗：启动时恢复持久化状态、注册全局快捷键、监听视口变化 ─
   const initPanel = useAIPanelStore((s) => s.init)
@@ -144,11 +146,46 @@ export default function App() {
     document.body.style.color = fontColor || ''
   }, [fontColor])
 
+  // ─── 书签卡片毛玻璃开关 ───────────────────────────
+  // 默认（cardGlass === undefined / true）保留毛玻璃；显式关闭时给 body
+  // 加 .tabit-cards-solid，由 global.css 的级联选择器把所有 .card 切到实色。
+  // 单一 class 控制，所有用 .card 的派生节点（书签 / 文件夹 / 历史 / + 占位 / DragPreview）
+  // 同步生效，不需要逐个组件传 prop。
+  useEffect(() => {
+    const off = cardGlass === false
+    document.body.classList.toggle('tabit-cards-solid', off)
+    return () => {
+      // 组件卸载时清理，避免遗留 class
+      document.body.classList.remove('tabit-cards-solid')
+    }
+  }, [cardGlass])
+
   // 顶层分类数量（侧栏只显示顶层）
   const topLevelCount = categories.filter((c) => !c.parentId).length
 
+  // 背景毛玻璃：仅在 backgroundBlur > 0 时渲染覆盖层。
+  // - fixed 全屏 + pointer-events-none 不挡交互
+  // - 渲染在主内容 DOM 之前（同层），主内容默认 paint 在它之上，
+  //   覆盖层的 backdrop-filter 作用对象是它"背后"的 body 背景层
+  const blurPx =
+    typeof backgroundBlur === 'number' && backgroundBlur > 0
+      ? Math.min(64, Math.max(0, backgroundBlur))
+      : 0
+
   return (
     <div className="h-full w-full flex flex-col">
+      {blurPx > 0 && (
+        <div
+          aria-hidden
+          className="fixed inset-0 pointer-events-none"
+          style={{
+            backdropFilter: `blur(${blurPx}px)`,
+            WebkitBackdropFilter: `blur(${blurPx}px)`,
+            // 用 -1 把覆盖层挤到内容下面、body 背景之上
+            zIndex: -1,
+          }}
+        />
+      )}
       <ToastContainer />
       {/* 全局 confirm/prompt 替代浏览器原生弹窗（v0.20.1+） */}
       <DialogHost />

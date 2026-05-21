@@ -86,6 +86,22 @@ export interface UserSettings {
   subSectionDefaultExpanded?: boolean
 
   /**
+   * 背景毛玻璃强度（px）。
+   * - 0 / undefined（默认）：不应用模糊，背景清晰显示
+   * - >0：在背景与内容之间叠一层 fixed 全屏 div，应用 `backdrop-filter: blur(Npx)`
+   * 推荐范围 0~32px；过大会让背景几乎消失，反而失去自定义背景的意义。
+   */
+  backgroundBlur?: number
+
+  /**
+   * 书签卡片 / 文件夹卡 / 历史卡 是否启用毛玻璃效果。
+   * - true / undefined（默认）：半透明 + backdrop-blur，与自定义背景融合更优雅
+   * - false：纯实色背景，无 backdrop 模糊，文字对比度更高、性能更好
+   * 通过 body 上的 `tabit-cards-solid` class 一处控制所有 .card 派生节点。
+   */
+  cardGlass?: boolean
+
+  /**
    * 「同步到浏览器书签」目标根：
    * - 'bookmarks_bar'（默认）→ 书签栏（顶部常用）
    * - 'other'              → 其他书签（不在书签栏可见）

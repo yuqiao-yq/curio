@@ -1105,6 +1105,47 @@ function StyleDialog({
               提示：本地上传的图片会以 base64 存储在浏览器本地，建议小于 2MB。
             </p>
           </div>
+
+          {/* 背景毛玻璃强度：在背景与内容之间叠一层 backdrop-filter: blur(Npx) */}
+          <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700/60">
+            <div className="flex items-center gap-3">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 shrink-0">
+                毛玻璃强度
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={32}
+                step={1}
+                value={settings.backgroundBlur ?? 0}
+                onChange={(e) =>
+                  void onUpdate({ backgroundBlur: Number(e.target.value) })
+                }
+                className="flex-1 accent-brand cursor-pointer"
+                aria-label="背景毛玻璃强度"
+              />
+              <span className="w-12 text-right text-[11px] tabular-nums text-slate-500 dark:text-slate-400 shrink-0">
+                {settings.backgroundBlur ?? 0} px
+              </span>
+              {(settings.backgroundBlur ?? 0) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void onUpdate({ backgroundBlur: 0 })}
+                  className={cn(
+                    'px-2 py-1 text-[11px] rounded transition-colors shrink-0',
+                    'text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10',
+                  )}
+                  title="清除毛玻璃效果"
+                  aria-label="清除毛玻璃效果"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+              在背景之上叠一层模糊（0 = 关闭；建议 4~16 px）。让背景更朦胧、内容更聚焦。
+            </p>
+          </div>
         </section>
 
         {/* 文字颜色 */}
@@ -1235,6 +1276,33 @@ function StyleDialog({
               <div className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
                 开启后，进入分类时其下所有子文件夹的书签 section 自动展开（一眼看到全部内容）。
                 关闭则默认折叠，需要时点 header 展开。
+              </div>
+            </div>
+          </label>
+
+          {/* 书签卡片毛玻璃开关（v0.21.18）：默认开启，关闭后切到实色 */}
+          <label
+            className={cn(
+              'mt-2 flex items-start gap-3 px-3 py-2.5 rounded-md cursor-pointer',
+              'border border-slate-200 dark:border-slate-700',
+              'hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors',
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={settings.cardGlass ?? true}
+              onChange={(e) =>
+                void onUpdate({ cardGlass: e.target.checked })
+              }
+              className="mt-0.5 w-4 h-4 accent-brand cursor-pointer shrink-0"
+            />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm text-slate-700 dark:text-slate-200">
+                书签卡片毛玻璃
+              </div>
+              <div className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                开启（默认）：卡片半透明 + 背景模糊，与自定义背景融合更优雅。
+                关闭：卡片纯实色背景，文字对比度更高，渲染更轻。
               </div>
             </div>
           </label>
