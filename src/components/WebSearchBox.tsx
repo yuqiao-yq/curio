@@ -278,7 +278,7 @@ export function WebSearchBox() {
   const modeChip = (
     <span
       className={cn(
-        'shrink-0 inline-flex items-center gap-1 h-6 px-1.5 rounded text-[10px] font-medium',
+        'shrink-0 inline-flex items-center gap-1 h-7 px-2 rounded-full text-[11px] font-medium',
         'transition-colors',
         parsed.mode === 'web'
           ? 'bg-brand text-white'
@@ -321,13 +321,15 @@ export function WebSearchBox() {
   )
 
   return (
-    <div ref={wrapRef} className="relative flex-1 max-w-xl mx-auto">
+    <div ref={wrapRef} className="relative flex-1 max-w-3xl mx-auto">
       <div
         className={cn(
-          'flex items-center gap-1 h-9 pl-2 pr-1 rounded-lg',
-          'border border-slate-200 dark:border-slate-700',
-          'bg-white/60 dark:bg-slate-800/60 backdrop-blur',
-          'focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/20 transition-all',
+          'flex items-center gap-1.5 h-11 pl-2.5 pr-1.5 rounded-2xl',
+          'border border-slate-200/80 dark:border-slate-700/80',
+          'bg-white/80 dark:bg-slate-900/75 backdrop-blur',
+          'shadow-sm shadow-slate-900/5',
+          'focus-within:border-brand/70 focus-within:ring-4 focus-within:ring-brand/15 focus-within:shadow-md focus-within:bg-white dark:focus-within:bg-slate-900',
+          'transition-all',
         )}
       >
         {/* 引擎选择按钮 */}
@@ -335,7 +337,7 @@ export function WebSearchBox() {
           type="button"
           onClick={() => setOpen((v) => !v)}
           className={cn(
-            'flex items-center gap-1 h-7 px-1.5 rounded shrink-0',
+            'flex items-center gap-1 h-8 px-2 rounded-xl shrink-0',
             'text-xs text-slate-600 dark:text-slate-300',
             'hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors',
           )}
@@ -352,7 +354,7 @@ export function WebSearchBox() {
           <span className="text-[10px] text-slate-400 leading-none">▾</span>
         </button>
 
-        <div className="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1 shrink-0" />
+        <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-0.5 shrink-0" />
 
         {modeChip}
 
@@ -363,9 +365,9 @@ export function WebSearchBox() {
             if (e.key === 'Enter') submit()
             if (e.key === 'Escape') setRaw('')
           }}
-          placeholder="搜索书签 / 网页…  @web 网页 · #标签 · @ai 语义"
+          placeholder="搜索书签、输入网址，或使用 @web / #标签 / @ai"
           className={cn(
-            'flex-1 min-w-0 h-full px-2 text-sm bg-transparent outline-none',
+            'flex-1 min-w-0 h-full px-2 text-[15px] bg-transparent outline-none',
             'placeholder:text-slate-400',
           )}
         />
@@ -386,7 +388,7 @@ export function WebSearchBox() {
             !parsed.q || parsed.mode === 'tag' || parsed.mode === 'ai'
           }
           className={cn(
-            'h-7 px-2.5 rounded text-xs font-medium transition-colors shrink-0',
+            'h-8 px-3 rounded-xl text-xs font-semibold transition-colors shrink-0',
             parsed.q && parsed.mode !== 'tag' && parsed.mode !== 'ai'
               ? 'bg-brand text-white hover:bg-brand-600'
               : 'bg-slate-100 text-slate-400 dark:bg-slate-700 dark:text-slate-500 cursor-not-allowed',

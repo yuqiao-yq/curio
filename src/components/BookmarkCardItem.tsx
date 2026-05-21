@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { BookmarkCard } from '../types/bookmark'
+import type { BookmarkCard, UserSettings } from '../types/bookmark'
 import { getHostname } from '../utils/favicon'
 import { useBookmarkStore } from '../stores/useBookmarkStore'
 import { usePageIndex } from '../ai/services/usePageIndex'
@@ -37,6 +37,47 @@ export interface SearchMeta {
   dupCategoryPaths: string[]
 }
 
+const CARD_SIZE_STYLES: Record<
+  UserSettings['cardSize'],
+  {
+    card: string
+    editingCard: string
+    icon: string
+    title: string
+    host: string
+    note: string
+    addNote: string
+  }
+> = {
+  sm: {
+    card: 'p-3 h-24 gap-2',
+    editingCard: 'p-3 min-h-24 gap-2',
+    icon: 'w-8 h-8 rounded',
+    title: 'text-sm font-semibold leading-snug truncate text-slate-800 dark:text-slate-100',
+    host: 'text-[11px]',
+    note: 'text-[11px] leading-snug line-clamp-1 rounded px-1.5 py-1 -mx-1.5',
+    addNote: 'text-[11px] rounded px-1.5 py-1 -mx-1.5',
+  },
+  md: {
+    card: 'p-3.5 h-32 gap-2.5',
+    editingCard: 'p-3.5 min-h-32 gap-2.5',
+    icon: 'w-9 h-9 rounded-lg',
+    title: 'text-sm font-semibold leading-snug line-clamp-2 text-slate-800 dark:text-slate-100',
+    host: 'text-[11px]',
+    note: 'text-xs leading-snug line-clamp-2 rounded-md px-2 py-1.5 -mx-2',
+    addNote: 'text-xs rounded-md px-2 py-1.5 -mx-2',
+  },
+  lg: {
+    card: 'p-4 h-36 gap-3',
+    editingCard: 'p-4 min-h-36 gap-3',
+    icon: 'w-10 h-10 rounded-xl',
+    title: 'text-[15px] font-semibold leading-snug line-clamp-2 text-slate-800 dark:text-slate-100',
+    host: 'text-xs',
+    note: 'text-xs leading-snug line-clamp-3 rounded-md px-2.5 py-2 -mx-2.5',
+    addNote: 'text-xs rounded-md px-2.5 py-2 -mx-2.5',
+  },
+}
+
 /**
  * 书签卡片：
  * - 整张卡片点击 → 在新标签页打开 URL
@@ -59,6 +100,8 @@ export function BookmarkCardItem({
   const updateCard = useBookmarkStore((s) => s.updateCard)
   const recordRecentOpen = useBookmarkStore((s) => s.recordRecentOpen)
   const setSearchKeyword = useBookmarkStore((s) => s.setSearchKeyword)
+  const cardSize = useBookmarkStore((s) => s.settings.cardSize)
+  const size = CARD_SIZE_STYLES[cardSize ?? 'md'] ?? CARD_SIZE_STYLES.md
   /**
    * 该卡是否已被 §6.1 抓取过正文（成功状态）。
    * 由 usePageIndex store 统一广播，避免每张卡片各自查 dexie。
@@ -214,11 +257,11 @@ export function BookmarkCardItem({
         openUrl()
       }}
       className={cn(
-        'card group p-3 select-none',
-        'flex flex-col gap-2',
+        'card group select-none overflow-hidden',
+        'flex flex-col',
         editing
-          ? 'cursor-default min-h-24 ring-2 ring-brand/40 shadow-md'
-          : 'cursor-pointer h-24 hover:border-brand/40 hover:shadow-brand/10',
+          ? cn('cursor-default ring-2 ring-brand/40 shadow-md', size.editingCard)
+          : cn('cursor-pointer hover:border-brand/40 hover:shadow-brand/10', size.card),
       )}
       title={editing ? undefined : `点击打开：${card.url}`}
     >
@@ -239,7 +282,8 @@ export function BookmarkCardItem({
                   onClick={(e) => { e.stopPropagation(); open() }}
                   title="点击修改图标"
                   className={cn(
-                    'w-8 h-8 rounded shrink-0 flex items-center justify-center',
+                    size.icon,
+                    'shrink-0 flex items-center justify-center',
                     'bg-slate-100 dark:bg-slate-700 hover:ring-2 hover:ring-brand/40 transition',
                   )}
                 >
@@ -254,8 +298,9 @@ export function BookmarkCardItem({
         ) : (
           <div
             className={cn(
-              'w-8 h-8 rounded shrink-0 flex items-center justify-center',
-              'bg-slate-100 dark:bg-slate-700',
+              size.icon,
+              'shrink-0 flex items-center justify-center',
+              'bg-slate-100 dark:bg-slate-700 ring-1 ring-slate-200/70 dark:ring-slate-600/60',
             )}
           >
             <CardIconView icon={card.icon} fallbackUrl={card.url} />
@@ -305,11 +350,14 @@ export function BookmarkCardItem({
           </div>
         ) : (
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium truncate" title={card.title}>
+            <div
+              className={size.title}
+              title={card.title}
+            >
               {card.title}
             </div>
-            <div className="flex items-center gap-1 min-w-0">
-              <span className="text-xs text-slate-400 truncate min-w-0 flex-1">
+            <div className="mt-1 flex items-center gap-1 min-w-0">
+              <span className={cn(size.host, 'text-slate-400 truncate min-w-0 flex-1')}>
                 {getHostname(card.url)}
               </span>
               {/* §6.1 已抓取正文角标：低调一点，仅 hover 卡片时变实
@@ -420,9 +468,8 @@ export function BookmarkCardItem({
             }}
             onPointerDown={(e) => e.stopPropagation()}
             className={cn(
-              'w-full text-left text-xs text-slate-500 dark:text-slate-400',
-              'leading-snug line-clamp-2',
-              'rounded px-1.5 py-1 -mx-1.5',
+              'w-full text-left text-slate-500 dark:text-slate-400',
+              size.note,
               'hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors',
             )}
             title="点击编辑备注"
@@ -439,8 +486,8 @@ export function BookmarkCardItem({
             }}
             onPointerDown={(e) => e.stopPropagation()}
             className={cn(
-              'w-full text-left text-xs',
-              'rounded px-1.5 py-1 -mx-1.5',
+              'w-full text-left',
+              size.addNote,
               'text-slate-300 dark:text-slate-600',
               'hover:text-brand hover:bg-slate-100 dark:hover:bg-slate-700/60',
               // 仅 hover 卡片时显示，避免空状态干扰阅读
@@ -539,7 +586,7 @@ function CardTagChips({
             onPickTag(t)
           }}
           className={cn(
-            'inline-flex items-center px-1 h-3.5 rounded text-[9px] leading-none',
+            'inline-flex items-center px-1.5 h-4 rounded-full text-[10px] leading-none',
             'bg-brand/10 text-brand hover:bg-brand/20',
             'max-w-[64px] truncate transition-colors',
           )}
@@ -551,7 +598,7 @@ function CardTagChips({
       {overflow > 0 && (
         <span
           className={cn(
-            'inline-flex items-center px-1 h-3.5 rounded text-[9px] leading-none',
+            'inline-flex items-center px-1.5 h-4 rounded-full text-[10px] leading-none',
             'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400',
             'tabular-nums',
           )}
@@ -621,13 +668,16 @@ export function CardIconView({
  * 保留最关键的"图标 + 标题 + 域名 + 备注"四件套。
  */
 export function CardDragPreview({ card }: { card: BookmarkCard }) {
+  const cardSize = useBookmarkStore((s) => s.settings.cardSize)
+  const size = CARD_SIZE_STYLES[cardSize ?? 'md'] ?? CARD_SIZE_STYLES.md
+
   return (
     <div
       // v0.21.7：标记本节点是 DragOverlay 内的预览，
       // findDropTargetAt 扫元素栈时跳过这个子树，
       // 否则 elementsFromPoint 命中的最顶层就是它，永远查不到下方真实 drop target。
       data-drag-preview="true"
-      className="card p-3 select-none flex flex-col gap-2 h-24"
+      className={cn('card select-none overflow-hidden flex flex-col', size.card)}
       style={{
         cursor: 'grabbing',
         boxShadow:
@@ -639,17 +689,18 @@ export function CardDragPreview({ card }: { card: BookmarkCard }) {
       <div className="flex items-start gap-2">
         <div
           className={cn(
-            'w-8 h-8 rounded shrink-0 flex items-center justify-center',
-            'bg-slate-100 dark:bg-slate-700',
+            size.icon,
+            'shrink-0 flex items-center justify-center',
+            'bg-slate-100 dark:bg-slate-700 ring-1 ring-slate-200/70 dark:ring-slate-600/60',
           )}
         >
           <CardIconView icon={card.icon} fallbackUrl={card.url} />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium truncate" title={card.title}>
+          <div className={size.title} title={card.title}>
             {card.title}
           </div>
-          <div className="text-xs text-slate-400 truncate">
+          <div className={cn('mt-1 text-slate-400 truncate', size.host)}>
             {getHostname(card.url)}
           </div>
         </div>
@@ -657,8 +708,8 @@ export function CardDragPreview({ card }: { card: BookmarkCard }) {
       {card.description && (
         <div
           className={cn(
-            'mt-auto w-full text-left text-xs text-slate-500 dark:text-slate-400',
-            'leading-snug line-clamp-2 rounded px-1.5 py-1 -mx-1.5',
+            'mt-auto w-full text-left text-slate-500 dark:text-slate-400',
+            size.note,
           )}
         >
           {card.description}

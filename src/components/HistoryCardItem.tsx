@@ -28,6 +28,28 @@ export function HistoryCardItem({ item }: Props) {
   const activeCategoryId = useBookmarkStore((s) => s.activeCategoryId)
   const addCardFromHistory = useBookmarkStore((s) => s.addCardFromHistory)
   const deleteHistoryUrl = useBookmarkStore((s) => s.deleteHistoryUrl)
+  const cardSize = useBookmarkStore((s) => s.settings.cardSize)
+  const size =
+    cardSize === 'sm'
+      ? {
+          card: 'p-3 h-24 gap-2',
+          icon: 'w-8 h-8 rounded',
+          title: 'text-sm font-medium truncate',
+          host: 'text-[11px]',
+        }
+      : cardSize === 'lg'
+        ? {
+            card: 'p-4 h-36 gap-3',
+            icon: 'w-10 h-10 rounded-xl',
+            title: 'text-[15px] font-semibold leading-snug line-clamp-2',
+            host: 'text-xs',
+          }
+        : {
+            card: 'p-3.5 h-32 gap-2.5',
+            icon: 'w-9 h-9 rounded-lg',
+            title: 'text-sm font-semibold leading-snug line-clamp-2',
+            host: 'text-[11px]',
+          }
 
   const openUrl = () => {
     window.open(item.url, '_blank', 'noopener,noreferrer')
@@ -82,7 +104,8 @@ export function HistoryCardItem({ item }: Props) {
     <div
       onClick={openUrl}
       className={cn(
-        'card group p-3 select-none cursor-pointer flex flex-col gap-2 h-24',
+        'card group select-none cursor-pointer overflow-hidden flex flex-col',
+        size.card,
         'hover:border-brand/40 hover:shadow-brand/10',
         // 加点淡的背景区分历史项 vs 真书签
         'bg-slate-50/40 dark:bg-slate-800/40',
@@ -93,7 +116,8 @@ export function HistoryCardItem({ item }: Props) {
       <div className="flex items-start gap-2">
         <div
           className={cn(
-            'w-8 h-8 rounded shrink-0 flex items-center justify-center',
+            size.icon,
+            'shrink-0 flex items-center justify-center',
             'bg-slate-100 dark:bg-slate-700 relative',
           )}
         >
@@ -120,10 +144,10 @@ export function HistoryCardItem({ item }: Props) {
         </div>
 
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium truncate" title={item.title}>
+          <div className={size.title} title={item.title}>
             {item.title}
           </div>
-          <div className="text-xs text-slate-400 truncate">
+          <div className={cn('mt-1 text-slate-400 truncate', size.host)}>
             {getHostname(item.url)}
           </div>
         </div>

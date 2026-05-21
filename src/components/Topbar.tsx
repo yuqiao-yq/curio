@@ -238,12 +238,12 @@ export function Topbar() {
   return (
     <header
       className={
-        'flex items-center gap-3 px-4 py-2.5 ' +
-        'min-h-[60px] shrink-0 ' +
-        'border-b border-slate-200/60 dark:border-slate-700/60'
+        'flex items-center gap-4 px-5 py-2.5 ' +
+        'min-h-[66px] shrink-0 ' +
+        'border-b border-slate-200/70 dark:border-slate-700/70'
       }
     >
-      <h1 className="text-lg font-semibold text-brand shrink-0 leading-none">Tab It</h1>
+      <h1 className="text-lg font-bold text-brand shrink-0 leading-none tracking-tight">Tab It</h1>
       {/* 中央：网页搜索框（替代被覆盖的浏览器地址栏，支持切换搜索引擎） */}
       <WebSearchBox />
       <div className="flex items-center gap-2 shrink-0">
@@ -851,6 +851,16 @@ const THEME_OPTIONS: Array<{ key: UserSettings['theme']; label: string; icon: st
   { key: 'auto', label: '跟随系统', icon: '🖥️' },
 ]
 
+const CARD_SIZE_OPTIONS: Array<{
+  key: UserSettings['cardSize']
+  label: string
+  desc: string
+}> = [
+  { key: 'sm', label: '小', desc: '更紧凑，适合大量书签' },
+  { key: 'md', label: '中', desc: '默认尺寸，信息密度均衡' },
+  { key: 'lg', label: '大', desc: '更舒展，备注更易读' },
+]
+
 /**
  * 文字颜色预设：覆盖最常见的浅/深底配色场景。
  * 第一项 value 为空 = 清除自定义，回退到主题默认色。
@@ -949,11 +959,11 @@ function StyleDialog({
       width={560}
       onClose={onClose}
     >
-      <div className="space-y-5">
+      <div className="space-y-4">
         {/* 主题 */}
-        <section>
+        <section className="rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-white/55 dark:bg-slate-900/45 p-4">
           <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-            主题
+            外观主题
           </h4>
           <div className="grid grid-cols-3 gap-2">
             {THEME_OPTIONS.map((opt) => {
@@ -988,9 +998,9 @@ function StyleDialog({
         </section>
 
         {/* 自定义背景 */}
-        <section>
+        <section className="rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-white/55 dark:bg-slate-900/45 p-4">
           <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-            自定义背景
+            背景
           </h4>
 
           {/* 预设缩略图 */}
@@ -1149,7 +1159,7 @@ function StyleDialog({
         </section>
 
         {/* 文字颜色 */}
-        <section>
+        <section className="rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-white/55 dark:bg-slate-900/45 p-4">
           <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
             文字颜色
           </h4>
@@ -1250,10 +1260,47 @@ function StyleDialog({
         </section>
 
         {/* 排版偏好（v0.21.15）：子文件夹 section 的默认展开/折叠 */}
-        <section>
+        <section className="rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-white/55 dark:bg-slate-900/45 p-4">
           <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-            排版偏好
+            内容布局
           </h4>
+          <div className="mb-3">
+            <div className="text-sm text-slate-700 dark:text-slate-200 mb-2">
+              书签卡片尺寸
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {CARD_SIZE_OPTIONS.map((opt) => {
+                const active = (settings.cardSize ?? 'md') === opt.key
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => void onUpdate({ cardSize: opt.key })}
+                    className={cn(
+                      'text-left px-3 py-2.5 rounded-lg border transition-all',
+                      active
+                        ? 'border-brand bg-brand/5 ring-2 ring-brand/20 dark:bg-brand/10'
+                        : 'border-slate-200 dark:border-slate-700 hover:border-brand/40 hover:bg-slate-50 dark:hover:bg-slate-700/40',
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        'text-sm font-medium',
+                        active
+                          ? 'text-brand'
+                          : 'text-slate-700 dark:text-slate-200',
+                      )}
+                    >
+                      {opt.label}
+                    </div>
+                    <div className="mt-1 text-[11px] leading-relaxed text-slate-400">
+                      {opt.desc}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
           <label
             className={cn(
               'flex items-start gap-3 px-3 py-2.5 rounded-md cursor-pointer',

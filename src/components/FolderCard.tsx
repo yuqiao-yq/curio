@@ -44,6 +44,7 @@ export function FolderCard({ category, draggable = false }: Props) {
   const categories = useBookmarkStore((s) => s.categories)
   const removeCategory = useBookmarkStore((s) => s.removeCategory)
   const updateCategory = useBookmarkStore((s) => s.updateCategory)
+  const cardSize = useBookmarkStore((s) => s.settings.cardSize)
   // 跨文件夹拖拽（v0.21.0+）：当某书签卡片 / 文件夹卡片悬停在本卡上时，订阅 hint 高亮
   const isDropHovered = useDropHintStore(
     (s) => s.hoverCategoryId === category.id,
@@ -148,6 +149,24 @@ export function FolderCard({ category, draggable = false }: Props) {
   }
   // 拖动自己时本卡不应该高亮自己（hint 检测里已防护，这里再做一道兜底）
   const showDropHint = isDropHovered && !isDragging
+  const size =
+    cardSize === 'sm'
+      ? {
+          card: 'p-3 h-24 gap-2',
+          editingCard: 'p-3 min-h-24 gap-2',
+          icon: 'w-8 h-8 rounded',
+        }
+      : cardSize === 'lg'
+        ? {
+            card: 'p-4 h-36 gap-3',
+            editingCard: 'p-4 min-h-36 gap-3',
+            icon: 'w-10 h-10 rounded-xl',
+          }
+        : {
+            card: 'p-3.5 h-32 gap-2.5',
+            editingCard: 'p-3.5 min-h-32 gap-2.5',
+            icon: 'w-9 h-9 rounded-lg',
+          }
 
   // 防止"拖拽结束 → mouseup 触发 onClick → 误进入子文件夹"
   // 与 BookmarkCardItem 同款保护：原生 pointerdown/up 监听位移 > 5px 标记
@@ -191,13 +210,13 @@ export function FolderCard({ category, draggable = false }: Props) {
       // 子按钮 / IconPicker / CardMenu 已 stopPropagation pointerdown）
       {...(draggable && !renaming ? { ...attributes, ...listeners } : {})}
       className={cn(
-        'card group p-3 select-none transition-shadow',
-        'flex flex-col gap-2',
+        'card group select-none overflow-hidden transition-shadow',
+        'flex flex-col',
         renaming
-          ? 'cursor-default min-h-24 ring-2 ring-brand/40 shadow-md'
+          ? cn('cursor-default ring-2 ring-brand/40 shadow-md', size.editingCard)
           : draggable
-            ? 'cursor-grab active:cursor-grabbing h-24 hover:border-brand/40 hover:shadow-brand/10'
-            : 'cursor-pointer h-24 hover:border-brand/40 hover:shadow-brand/10',
+            ? cn('cursor-grab active:cursor-grabbing hover:border-brand/40 hover:shadow-brand/10', size.card)
+            : cn('cursor-pointer hover:border-brand/40 hover:shadow-brand/10', size.card),
         // 拖拽落点高亮（淡蓝色，与卡片自身的 brand 紫蓝区分开）
         showDropHint &&
           'ring-2 ring-sky-400/70 dark:ring-sky-400/60 bg-sky-50/60 dark:bg-sky-500/10 shadow-md',
@@ -231,7 +250,8 @@ export function FolderCard({ category, draggable = false }: Props) {
                 onClick={(e) => { e.stopPropagation(); open() }}
                 title="点击修改图标"
                 className={cn(
-                  'flex items-center justify-center w-8 h-8 rounded shrink-0',
+                  'flex items-center justify-center shrink-0',
+                  size.icon,
                   'bg-slate-100 dark:bg-slate-700',
                   'hover:ring-2 hover:ring-brand/40 transition',
                 )}

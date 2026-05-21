@@ -306,6 +306,7 @@ function CategorySection({
   const moveCard = useBookmarkStore((s) => s.moveCard)
   // v0.21.2：子 section header 上编辑 description
   const updateCategory = useBookmarkStore((s) => s.updateCategory)
+  const cardSize = useBookmarkStore((s) => s.settings.cardSize)
   // v0.21.2 / v0.21.8：当书签拖到本 section（header 或下方书签网格区域，
   // 整个 section 都是 drop target）时，让 header 显示高亮提示落点
   const isSectionDropHovered = useDropHintStore(
@@ -503,6 +504,8 @@ function CategorySection({
 
   // section 整体为空时（无子文件夹、无书签）也显示出来——保持目录结构可见
   const sectionIsEmpty = subFolders.length === 0 && directCards.length === 0
+  const addCardHeightClass =
+    cardSize === 'sm' ? 'h-24' : cardSize === 'lg' ? 'h-36' : 'h-32'
 
   return (
     <section
@@ -701,7 +704,10 @@ function CategorySection({
                     {!showFullHeader && (
                       <button
                         onClick={handleAddCard}
-                        className="card flex items-center justify-center h-24 text-3xl text-slate-300 hover:text-brand hover:border-brand/50 transition-colors"
+                        className={cn(
+                          'card flex items-center justify-center text-3xl text-slate-300 hover:text-brand hover:border-brand/50 transition-colors',
+                          addCardHeightClass,
+                        )}
                         title="新建书签"
                       >
                         +

@@ -407,7 +407,8 @@ export function CategorySidebar() {
     <aside
       className={cn(
         'relative shrink-0 flex flex-col',
-        'border-r border-slate-200/60 dark:border-slate-700/60',
+        'border-r border-slate-200/70 dark:border-slate-700/70',
+        'bg-white/25 dark:bg-slate-950/20 backdrop-blur-sm',
         'overflow-hidden',
         // 拖拽中关闭过渡，避免跟手抖动；其他时机（折叠/展开/恢复默认）保留丝滑动画
         !resizing && 'transition-[width] duration-300 ease-in-out',
@@ -591,7 +592,7 @@ export function CategorySidebar() {
 
         {/* DndContext 包整棵分类树。各层的 SortableContext 通过 renderSiblings 生成。
             选择/重命名模式下禁用拖拽。 */}
-        <div className="flex flex-col gap-0.5 overflow-y-auto">
+        <div className="flex flex-col gap-1 overflow-y-auto">
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
@@ -784,7 +785,7 @@ function SortableSidebarRow(props: RowProps) {
         // 由 BookmarkGrid CategorySection 的 onDragMove 用 elementFromPoint 反查。
         data-card-drop-target={cat.id}
         className={cn(
-          'group flex items-center gap-1 pr-2 py-1.5 rounded-lg transition-colors',
+          'group relative flex items-center gap-1.5 pr-2 py-2 rounded-xl transition-colors',
           disabled ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing',
           selectMode
             ? isSelected
@@ -795,8 +796,8 @@ function SortableSidebarRow(props: RowProps) {
                 ? 'bg-brand/[0.04] dark:bg-brand/10'
                 : 'hover:bg-slate-100 dark:hover:bg-slate-800'
             : active
-              ? 'bg-brand text-white'
-              : 'hover:bg-slate-100 dark:hover:bg-slate-800',
+              ? 'bg-brand/10 text-brand ring-1 ring-brand/20 shadow-sm dark:bg-brand/20 dark:text-brand-200 dark:ring-brand/30'
+              : 'text-slate-600 hover:bg-white/60 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800/80 dark:hover:text-slate-100',
           // 嵌入指示：被拖动节点放下时会成为该行的子节点
           dropIndicator === 'inside' &&
             'ring-2 ring-brand ring-inset bg-brand/10 dark:bg-brand/20',
@@ -804,7 +805,7 @@ function SortableSidebarRow(props: RowProps) {
           isCardDropHovered &&
             'ring-2 ring-sky-400/70 dark:ring-sky-400/60 ring-inset bg-sky-50/70 dark:bg-sky-500/15',
         )}
-        style={{ paddingLeft: 4 + depth * 12 }}
+        style={{ paddingLeft: 6 + depth * 16 }}
         onClick={() => {
           if (selectMode) {
             // 任意层级都可勾选；祖先已选时点子级会"显式追加"该子级到 selectedIds，
@@ -825,7 +826,7 @@ function SortableSidebarRow(props: RowProps) {
               'transition-transform duration-150 font-bold',
               isExpanded ? 'rotate-90' : '',
               !selectMode && active
-                ? 'text-white hover:bg-white/20'
+                ? 'text-brand hover:bg-brand/10 dark:text-brand-200 dark:hover:bg-brand/20'
                 : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-700',
             )}
             onClick={(e) => {
@@ -882,9 +883,9 @@ function SortableSidebarRow(props: RowProps) {
                   onPointerDown={stop}
                   title="点击修改图标"
                   className={cn(
-                    'flex items-center justify-center w-5 h-5 rounded',
+                    'flex items-center justify-center w-6 h-6 rounded-lg',
                     'hover:bg-slate-200/70 dark:hover:bg-slate-700/60',
-                    !selectMode && active && 'hover:bg-white/20',
+                    !selectMode && active && 'bg-white/60 hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15',
                   )}
                 >
                   <IconView
@@ -915,7 +916,10 @@ function SortableSidebarRow(props: RowProps) {
           />
         ) : (
           <span
-            className="flex-1 min-w-0 text-sm truncate"
+            className={cn(
+              'flex-1 min-w-0 text-sm truncate',
+              active ? 'font-semibold' : 'font-medium',
+            )}
             title={cat.name}
             onDoubleClick={(e) => {
               if (selectMode) return
@@ -929,8 +933,10 @@ function SortableSidebarRow(props: RowProps) {
 
         <span
           className={cn(
-            'text-xs shrink-0 tabular-nums',
-            !selectMode && active ? 'text-white/70' : 'text-slate-400',
+            'inline-flex min-w-5 h-5 px-1.5 items-center justify-center rounded-full text-[11px] shrink-0 tabular-nums',
+            !selectMode && active
+              ? 'bg-brand/15 text-brand dark:bg-brand/25 dark:text-brand-100'
+              : 'bg-slate-100/80 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
           )}
         >
           {countOf(cat.id)}
@@ -944,7 +950,7 @@ function SortableSidebarRow(props: RowProps) {
                 'w-5 h-5 flex items-center justify-center rounded text-base leading-none shrink-0',
                 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity',
                 active
-                  ? 'text-white/70 hover:text-white hover:bg-white/20'
+                  ? 'text-brand hover:text-brand-700 hover:bg-brand/10 dark:text-brand-100 dark:hover:bg-brand/20'
                   : 'text-slate-400 hover:text-brand hover:bg-slate-200/80 dark:hover:bg-slate-700',
               )}
               onClick={(e) => {
@@ -962,7 +968,7 @@ function SortableSidebarRow(props: RowProps) {
                 'w-5 h-5 flex items-center justify-center rounded shrink-0',
                 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity',
                 active
-                  ? 'text-white/80 hover:text-white hover:bg-white/20'
+                  ? 'text-brand/80 hover:text-red-500 hover:bg-red-50 dark:text-brand-100 dark:hover:bg-red-500/15'
                   : 'text-slate-400 hover:text-red-500 hover:bg-slate-200/80 dark:hover:bg-slate-700',
               )}
               onClick={async (e) => {
