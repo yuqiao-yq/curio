@@ -63,6 +63,67 @@ function parseQuery(raw: string): { mode: Mode; q: string } {
   return { mode: 'auto', q: trimmed.trim() }
 }
 
+/**
+ * 把输入字符串尝试解析为可直接跳转的 URL；非 URL 返回 null。
+ *
+ * 匹配规则（按优先级）：
+ *  1. 已带 scheme（http / https / ftp / file / chrome-extension 等）→ 用 URL 校验后直接返回 href
+ *  2. localhost[:port][/path]                                          → 自动补 http://
+ *  3. IPv4 [:port][/path]                                              → 自动补 http://
+ *  4. 域名形式 host.tld[:port][/path][?query][#hash]                    → 自动补 https://
+ *
+ * 防误判：
+ *  - 含空白字符的输入直接判否（避免 "hello.com 搜索" 这种被误识别）
+ *  - 域名必须至少含一个 `.` 且 TLD 是 2~24 个字母（排除 `3.14` / `1.2.3` 等数字串）
+ *  - 已带 scheme 的字符串若 URL 构造失败则判否
+ *
+ * 不在此处处理：以 `@`/`#` 开头的"模式前缀"由 parseQuery 先一步剥离/拦截，
+ * 进入本函数的 q 已经是纯查询词。
+ */
+function tryAsUrl(raw: string): string | null {
+  const s = raw.trim()
+  if (!s || /\s/.test(s)) return null
+
+  // 1) 已带 scheme
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) {
+    try {
+      return new URL(s).href
+    } catch {
+      return null
+    }
+  }
+
+  // 2) localhost / localhost:port / localhost/path
+  if (/^localhost(:\d+)?(\/.*)?$/i.test(s)) {
+    try {
+      return new URL('http://' + s).href
+    } catch {
+      return null
+    }
+  }
+
+  // 3) IPv4[:port][/path]
+  if (/^(\d{1,3}\.){3}\d{1,3}(:\d+)?(\/.*)?$/.test(s)) {
+    try {
+      return new URL('http://' + s).href
+    } catch {
+      return null
+    }
+  }
+
+  // 4) 域名形式：xxx.tld[:port][/path][?query][#hash]
+  //    - 主机段允许 a-zA-Z0-9- 且不能以 - 开头/结尾
+  //    - TLD 段必须是 2~24 位纯字母（防止把 "v1.2" / "package.json" 类误判）
+  const domainRe =
+    /^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)(\.([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?))*\.[a-zA-Z]{2,24}(:\d+)?(\/[^\s]*)?(\?[^\s]*)?(#[^\s]*)?$/
+  if (!domainRe.test(s)) return null
+  try {
+    return new URL('https://' + s).href
+  } catch {
+    return null
+  }
+}
+
 function loadEngine(): Engine {
   try {
     const id = localStorage.getItem(STORAGE_KEY)
@@ -160,6 +221,16 @@ export function WebSearchBox() {
     )
   }, [cards, parsed.mode, parsed.q])
 
+  /**
+   * 当前 q 是否看起来是 URL —— 仅在 auto 模式判定。
+   * - local / web / tag / ai 各自有明确语义，即使输入是 URL 也不抢行为
+   *   （例如 `@bm github.com` 表达的是"在本地书签里搜 github.com"，应保留原语义）
+   */
+  const urlPreview = useMemo(() => {
+    if (parsed.mode !== 'auto' || !parsed.q) return null
+    return tryAsUrl(parsed.q)
+  }, [parsed.mode, parsed.q])
+
   const goWebSearch = (q: string) => {
     if (!q) return
     const url = engine.searchUrl.replace('{q}', encodeURIComponent(q))
@@ -177,6 +248,17 @@ export function WebSearchBox() {
     }
     // tag / ai 模式回车：什么都不做（持续筛选；按 ✕ / Esc 才退出）
     if (mode === 'tag' || mode === 'ai') return
+
+    // auto 模式：URL > 本地匹配 > 网页搜索
+    //   优先级理由：用户明确粘了 / 敲了一个 URL，意图非常清晰，
+    //   不应再分散到"本地模糊匹配"或"网页搜索"。
+    //   如果用户确实想"用 URL 当关键词搜本地书签"，可显式 `@bm xxx` 兜底。
+    if (mode === 'auto' && urlPreview) {
+      window.open(urlPreview, '_blank', 'noopener,noreferrer')
+      setRaw('')
+      return
+    }
+
     // local / auto：先尝试打开第一个匹配；没有就 fallback 到网页搜索（auto 模式下）
     if (firstLocalMatch) {
       window.open(firstLocalMatch.url, '_blank', 'noopener,noreferrer')
@@ -191,6 +273,8 @@ export function WebSearchBox() {
   }
 
   // 视觉上模式标识：默认显示引擎 favicon，@web 模式高亮，@bm / tag / ai 各自有彩色徽标
+  // auto 模式下若 q 被识别为 URL，临时切到 emerald 色 "链接" 徽标，让用户知道回车会直接跳转
+  const isUrl = parsed.mode === 'auto' && !!urlPreview
   const modeChip = (
     <span
       className={cn(
@@ -204,7 +288,9 @@ export function WebSearchBox() {
               ? 'bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300'
               : parsed.mode === 'ai'
                 ? 'bg-fuchsia-100 dark:bg-fuchsia-500/20 text-fuchsia-700 dark:text-fuchsia-300'
-                : 'text-slate-400',
+                : isUrl
+                  ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                  : 'text-slate-400',
       )}
       title={
         parsed.mode === 'web'
@@ -215,7 +301,9 @@ export function WebSearchBox() {
               ? '按标签筛选（#tag）'
               : parsed.mode === 'ai'
                 ? 'AI 语义搜索（@ai）—— 需先在「⚙ 设置」生成 embedding'
-                : '本地优先；@web 网页搜索 · #tag 标签筛选 · @ai 语义搜索'
+                : isUrl
+                  ? `识别为链接，回车直接打开：${urlPreview}`
+                  : '本地优先；@web 网页搜索 · #tag 标签筛选 · @ai 语义搜索'
       }
     >
       {parsed.mode === 'web'
@@ -226,7 +314,9 @@ export function WebSearchBox() {
             ? '标签'
             : parsed.mode === 'ai'
               ? '✨ AI'
-              : '智能'}
+              : isUrl
+                ? '链接'
+                : '智能'}
     </span>
   )
 
@@ -308,18 +398,22 @@ export function WebSearchBox() {
                 ? '标签筛选无需回车；点 ✕ 退出筛选'
                 : parsed.mode === 'ai'
                   ? '语义搜索无需回车；输入即按相似度排序'
-                  : firstLocalMatch
-                    ? `打开匹配书签：${firstLocalMatch.title}`
-                    : `用 ${engine.name} 搜索网页 (Enter)`
+                  : isUrl
+                    ? `前往：${urlPreview}`
+                    : firstLocalMatch
+                      ? `打开匹配书签：${firstLocalMatch.title}`
+                      : `用 ${engine.name} 搜索网页 (Enter)`
           }
         >
           {parsed.mode === 'tag'
             ? '筛选中'
             : parsed.mode === 'ai'
               ? '✨ 检索中'
-              : parsed.mode === 'web' || (parsed.mode === 'auto' && !firstLocalMatch)
-                ? '搜网页'
-                : '打开'}
+              : isUrl
+                ? '前往'
+                : parsed.mode === 'web' || (parsed.mode === 'auto' && !firstLocalMatch)
+                  ? '搜网页'
+                  : '打开'}
         </button>
       </div>
 
