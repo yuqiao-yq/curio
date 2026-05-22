@@ -96,6 +96,68 @@ export function HistoryCardItem({ item }: Props) {
     },
   ]
 
+  /**
+   * v0.21.19 精简档：方形卡，居中图标 + 标题。
+   * 与 CompactBookmarkCard 同尺寸/同 hover 动效，保证同一行 bookmark 与 history 视觉一致。
+   * 右下角保留 🕒 角标用于区分历史项。
+   */
+  if (cardSize === 'compact') {
+    const small = cardIconSize === 'small'
+    return (
+      <div
+        onClick={openUrl}
+        className={cn(
+          'group/compact select-none cursor-pointer',
+          'flex flex-col items-center justify-center gap-2.5',
+          'w-28 h-28 justify-self-center',
+          'rounded-xl px-3 py-3',
+          'bg-transparent',
+          'transition-all duration-200 ease-out',
+          'hover:bg-white/65 dark:hover:bg-slate-800/55 hover:backdrop-blur',
+          'hover:-translate-y-0.5',
+          'hover:shadow-[0_2px_4px_rgba(15,23,42,0.05),0_12px_24px_-4px_rgba(99,102,241,0.18)]',
+          'dark:hover:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_14px_28px_-4px_rgba(99,102,241,0.35)]',
+        )}
+        title={`${item.title}\n${item.url}\n（来自浏览器历史）`}
+      >
+        <div
+          className={cn(
+            small ? 'w-8 h-8 rounded-md' : 'w-11 h-11 rounded-lg',
+            'shrink-0 flex items-center justify-center relative',
+            'bg-slate-100/80 dark:bg-slate-700/60 ring-1 ring-slate-200/70 dark:ring-slate-600/60',
+          )}
+        >
+          <FaviconImg
+            url={item.url}
+            size={small ? 18 : 28}
+            className={small ? 'w-4 h-4 rounded-sm object-contain' : 'w-7 h-7 rounded-sm object-contain'}
+            fallbackClassName={small ? 'w-4 h-4 rounded-sm text-[10px]' : 'w-7 h-7 rounded-sm text-xs'}
+          />
+          {/* 历史项角标：右下角小时钟 */}
+          <span
+            className={cn(
+              'absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full',
+              'bg-white dark:bg-slate-900',
+              'border border-slate-200 dark:border-slate-600',
+              'flex items-center justify-center text-[8px] leading-none text-slate-400',
+            )}
+            aria-hidden
+          >
+            🕒
+          </span>
+        </div>
+        <div
+          className={cn(
+            'w-full text-center text-xs leading-tight truncate',
+            'text-slate-700 dark:text-slate-200',
+          )}
+        >
+          {item.title}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       onClick={openUrl}
