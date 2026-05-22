@@ -512,6 +512,9 @@ function CategorySection({
   const sectionIsEmpty = subFolders.length === 0 && directCards.length === 0
   const addCardHeightClass =
     cardSize === 'sm' ? 'h-24' : cardSize === 'lg' ? 'h-36' : 'h-32'
+  // + 占位用正方形：宽=高，避免在网格列里被拉成长方形
+  const addCardSquareClass =
+    cardSize === 'sm' ? 'w-24 h-24' : cardSize === 'lg' ? 'w-36 h-36' : 'w-32 h-32'
 
   return (
     <section
@@ -567,7 +570,7 @@ function CategorySection({
           />
           <button
             onClick={() => setActive(category.id)}
-            className="text-sm font-medium text-slate-700 dark:text-slate-200 hover:text-brand transition-colors truncate shrink-0"
+            className="text-sm font-semibold text-slate-700 dark:text-slate-200 hover:text-brand transition-colors truncate shrink-0"
             title={`进入：${breadcrumbPath}`}
           >
             {breadcrumbPath}
@@ -665,6 +668,12 @@ function CategorySection({
             {directCards.length > 0 && subFolders.length > 0 && ' · '}
             {subFolders.length > 0 && `${subFolders.length} 文件夹`}
           </span>
+          <div className="flex-1" />
+          <button
+            onClick={handleAddCard}
+            className="opacity-0 group-hover/sec:opacity-100 transition-opacity btn-ghost !p-1 h-6 w-6 text-sm shrink-0"
+            title="在此分类添加书签"
+          >+</button>
         </header>
       )}
 
@@ -674,13 +683,13 @@ function CategorySection({
               产品诉求：用户更常打开常用书签，文件夹是导航辅助；
               所以"书签 → 文件夹"的视觉顺序更符合使用频次
 
-              - 根 section（非 full header）始终显示该块（哪怕 0 书签也保留 + 按钮，方便随时新建）
-              - 子 section（full header）只有有书签时显示，避免视觉空洞 */}
-          {(directCards.length > 0 || !showFullHeader) && (
+              所有 section 始终渲染该块：哪怕 0 书签也保留 + 占位，让"新建书签"
+              的发现性在根 / 子级文件夹中保持一致（root + sub 同款交互）。 */}
+          {(
             <div className={subFolders.length > 0 ? 'mb-4' : ''}>
-              {/* 仅当下面还有文件夹时给书签块加标题，做视觉分隔；
-                  纯书签场景去掉标题更清爽 */}
-              {subFolders.length > 0 && (
+              {/* 仅当下面有文件夹 + 上方至少有 1 张书签时给书签块加标题做视觉分隔；
+                  只剩一个 + 占位时挂"书签"小标会显得奇怪 */}
+              {subFolders.length > 0 && directCards.length > 0 && (
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
                   书签
                 </h3>
@@ -707,17 +716,28 @@ function CategorySection({
                     {directCards.map((card) => (
                       <BookmarkCardItem key={card.id} card={card} />
                     ))}
-                    {/* 仅在根 section（非 full header）显示 + 按钮，子 section 由 header 上的 + 处理 */}
-                    {!showFullHeader && (
+                    {/* + 占位（所有层级）：默认透明虚边、hover 切毛玻璃 + 上浮，
+                        色阶对齐 header 文字（slate-700/dark:slate-200） */}
+                    {(
                       <button
                         onClick={handleAddCard}
                         className={cn(
-                          'card flex items-center justify-center text-3xl text-slate-300 hover:text-brand hover:border-brand/50 transition-colors',
-                          addCardHeightClass,
+                          'group/add justify-self-start rounded-xl text-3xl flex items-center justify-center shrink-0',
+                          'border border-dashed border-slate-300/60 dark:border-slate-600/50',
+                          'text-slate-700 dark:text-slate-200',
+                          'bg-transparent',
+                          'transition-all duration-200 ease-out',
+                          'hover:bg-white/60 dark:hover:bg-slate-800/55 hover:backdrop-blur',
+                          'hover:border-transparent',
+                          'hover:-translate-y-0.5',
+                          'hover:shadow-[0_2px_4px_rgba(15,23,42,0.05),0_12px_24px_-4px_rgba(99,102,241,0.18)]',
+                          'dark:hover:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_14px_28px_-4px_rgba(99,102,241,0.35)]',
+                          addCardSquareClass,
                         )}
                         title="新建书签"
+                        aria-label="新建书签"
                       >
-                        +
+                        <span className="leading-none opacity-60 group-hover/add:opacity-100 transition-opacity">+</span>
                       </button>
                     )}
                   </div>

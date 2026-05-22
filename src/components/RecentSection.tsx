@@ -6,6 +6,7 @@ import { BookmarkCardItem } from './BookmarkCardItem'
 import { HistoryCardItem } from './HistoryCardItem'
 import { confirmDialog, promptDialog } from './Dialog'
 import { cn } from '../utils/cn'
+import { IconView } from '../utils/icon'
 
 const GRID_COLS =
   'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3'
@@ -149,14 +150,19 @@ export function RecentSection() {
         >
           ▸
         </button>
-        <span className="text-base leading-none">🕒</span>
-        <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+        <IconView
+          fallback="🕒"
+          boxed
+          boxClassName="w-6 h-6"
+          emojiClassName="text-sm leading-none"
+        />
+        <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
           最近使用
         </span>
         <span className="text-xs text-slate-400 tabular-nums">
           {visibleItems.length} / {recentLimit}
         </span>
-        <div className="flex-1 border-t border-dashed border-slate-200 dark:border-slate-700 ml-2" />
+        <div className="flex-1" />
 
         {/* 开关：包含浏览器历史 */}
         <button
