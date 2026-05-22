@@ -17,7 +17,7 @@ import { HelpDialog } from '../HelpDialog'
 // （Vite 的 ?raw 后缀会把文件以纯字符串形式 import 进来）
 import userGuideMd from '../../../docs/USER_GUIDE.md?raw'
 
-import { DatabaseIcon, PaletteIcon, InfoIcon, HelpIcon } from './icons'
+import { DatabaseIcon, PaletteIcon, InfoIcon, HelpIcon, GearIcon } from './icons'
 import { AboutDialog } from './AboutDialog'
 import { DataDialog } from './DataDialog'
 import { ExportToBrowserDialog } from './ExportToBrowserDialog'
@@ -242,24 +242,26 @@ export function Topbar() {
   return (
     <header
       className={
-        'flex items-center gap-4 px-5 py-2.5 ' +
+        'grid grid-cols-[1fr_auto_1fr] items-center gap-4 px-5 py-2.5 ' +
         'min-h-[66px] shrink-0 ' +
         'border-b border-slate-200/70 dark:border-slate-700/70'
       }
     >
-      <h1 className="text-lg font-bold text-brand shrink-0 leading-none tracking-tight">Tab It</h1>
+      <h1 className="text-sm font-semibold text-brand/70 hover:text-brand transition-colors leading-none tracking-tight">Tab It</h1>
       {/* 中央：网页搜索框（替代被覆盖的浏览器地址栏，支持切换搜索引擎） */}
-      <WebSearchBox />
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="justify-self-center w-full max-w-[720px]">
+        <WebSearchBox />
+      </div>
+      <div className="flex items-center gap-2 justify-self-end opacity-70 hover:opacity-100 transition-opacity">
         {/* 帮助文档 → 弹出使用文档弹窗（位于齿轮左侧，与齿轮同尺寸 9×9） */}
         <button
           type="button"
           onClick={() => setHelpDialogOpen(true)}
           className={cn(
             'w-9 h-9 flex items-center justify-center rounded-md',
-            'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100',
+            'text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-100',
             'hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors',
-            helpDialogOpen && 'text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-800',
+            helpDialogOpen && 'text-slate-700 dark:text-slate-100 bg-slate-100 dark:bg-slate-800',
           )}
           title="帮助文档"
           aria-label="帮助文档"
@@ -300,15 +302,15 @@ export function Topbar() {
                 toggle()
               }}
               className={cn(
-                'w-9 h-9 flex items-center justify-center rounded-md text-base',
-                'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100',
+                'w-9 h-9 flex items-center justify-center rounded-md',
+                'text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-100',
                 'hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors',
-                isOpen && 'text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-800',
+                isOpen && 'text-slate-700 dark:text-slate-100 bg-slate-100 dark:bg-slate-800',
               )}
               title="设置"
               aria-label="设置"
             >
-              ⚙
+              <GearIcon />
             </button>
           )}
         />
