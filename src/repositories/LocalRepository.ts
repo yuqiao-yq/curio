@@ -136,7 +136,18 @@ export class LocalRepository implements BookmarkRepository {
   // ---------- 设置 ----------
   async getSettings(): Promise<UserSettings> {
     const result = await browser.storage.local.get(KEYS.settings)
-    return { ...DEFAULT_SETTINGS, ...(result[KEYS.settings] ?? {}) }
+    const merged = { ...DEFAULT_SETTINGS, ...(result[KEYS.settings] ?? {}) }
+    // v0.21.19 cardSize 重命名 + 去掉旧 lg 档；老用户存盘还可能是 sm/md/lg
+    // 映射：sm(老h-24=小) → standard、md(老h-32=中) → large、lg(老h-36=大，已废弃) → large
+    const legacyMap: Record<string, UserSettings['cardSize']> = {
+      sm: 'standard',
+      md: 'large',
+      lg: 'large',
+    }
+    if (merged.cardSize && legacyMap[merged.cardSize as string]) {
+      merged.cardSize = legacyMap[merged.cardSize as string]
+    }
+    return merged
   }
 
   async saveSettings(settings: UserSettings): Promise<void> {

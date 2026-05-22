@@ -51,7 +51,23 @@ export interface BookmarkCard {
 export interface UserSettings {
   theme: 'light' | 'dark' | 'auto'
   layout: 'grid' | 'list'
-  cardSize: 'sm' | 'md' | 'lg'
+  /**
+   * 书签卡尺寸档位：
+   * - compact 精简：只图标 + 名称，hover 出方形阴影；适合大量书签速览
+   * - standard 标准：默认尺寸（带域名/备注/tags）
+   * - large 大：信息更舒展
+   *
+   * v0.21.19 之前是 'sm' | 'md' | 'lg'，对应：sm=标准、md=大、lg=已废弃；
+   * LocalRepository.getSettings 会把旧值迁移到新枚举。
+   */
+  cardSize: 'compact' | 'standard' | 'large'
+  /**
+   * 书签卡片图标尺寸：
+   * - small 较小：图标和图标底图层同步缩小（≈ 浏览器 favicon 视觉权重）
+   * - standard 标准：与卡片尺寸档默认匹配的常规尺寸
+   * 仅影响书签卡（不影响文件夹卡 / 历史卡 / 侧边栏图标）
+   */
+  cardIconSize?: 'small' | 'standard'
   wallpaper?: string
   /**
    * 自定义文字颜色（hex 或任意合法 CSS 颜色字符串）。
@@ -142,7 +158,8 @@ export interface SyncResult {
 export const DEFAULT_SETTINGS: UserSettings = {
   theme: 'auto',
   layout: 'grid',
-  cardSize: 'md',
+  cardSize: 'standard',
+  cardIconSize: 'standard',
   language: 'zh-CN',
   syncProvider: 'local',
 }

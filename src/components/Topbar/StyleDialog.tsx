@@ -56,9 +56,18 @@ const CARD_SIZE_OPTIONS: Array<{
   label: string
   desc: string
 }> = [
-  { key: 'sm', label: '小', desc: '更紧凑，适合大量书签' },
-  { key: 'md', label: '中', desc: '默认尺寸，信息密度均衡' },
-  { key: 'lg', label: '大', desc: '更舒展，备注更易读' },
+  { key: 'compact', label: '精简', desc: '只显示图标和名称，hover 高亮' },
+  { key: 'standard', label: '标准', desc: '更紧凑，含域名 / 备注 / 标签' },
+  { key: 'large', label: '较大', desc: '默认尺寸，信息密度均衡' },
+]
+
+const CARD_ICON_SIZE_OPTIONS: Array<{
+  key: NonNullable<UserSettings['cardIconSize']>
+  label: string
+  desc: string
+}> = [
+  { key: 'small', label: '较小', desc: '接近浏览器 favicon 的视觉权重' },
+  { key: 'standard', label: '标准', desc: '与卡片尺寸匹配的默认大小' },
 ]
 
 /**
@@ -470,12 +479,49 @@ export function StyleDialog({
             </div>
             <div className="grid grid-cols-3 gap-2">
               {CARD_SIZE_OPTIONS.map((opt) => {
-                const active = (settings.cardSize ?? 'md') === opt.key
+                const active = (settings.cardSize ?? 'standard') === opt.key
                 return (
                   <button
                     key={opt.key}
                     type="button"
                     onClick={() => void onUpdate({ cardSize: opt.key })}
+                    className={cn(
+                      'text-left px-3 py-2.5 rounded-lg border transition-all',
+                      active
+                        ? 'border-brand bg-brand/5 ring-2 ring-brand/20 dark:bg-brand/10'
+                        : 'border-slate-200 dark:border-slate-700 hover:border-brand/40 hover:bg-slate-50 dark:hover:bg-slate-700/40',
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        'text-sm font-medium',
+                        active
+                          ? 'text-brand'
+                          : 'text-slate-700 dark:text-slate-200',
+                      )}
+                    >
+                      {opt.label}
+                    </div>
+                    <div className="mt-1 text-[11px] leading-relaxed text-slate-400">
+                      {opt.desc}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          <div className="mb-3">
+            <div className="text-sm text-slate-700 dark:text-slate-200 mb-2">
+              图标尺寸
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {CARD_ICON_SIZE_OPTIONS.map((opt) => {
+                const active = (settings.cardIconSize ?? 'standard') === opt.key
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => void onUpdate({ cardIconSize: opt.key })}
                     className={cn(
                       'text-left px-3 py-2.5 rounded-lg border transition-all',
                       active

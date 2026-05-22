@@ -37,6 +37,14 @@ const AISearchView = lazy(() => import('./BookmarkGridAISearch'))
 const GRID_COLS =
   'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3'
 
+/**
+ * compact 档专用网格：固定列宽 = 卡片宽（112px），auto-fill 自动按容器宽度铺。
+ * 避免标准断点 grid 在大屏下把 w-28 卡撑到一行 5~6 列后留出过宽的视觉空隙。
+ * gap 也收紧到 2，与 compact 紧凑信息密度一致。
+ */
+const GRID_COLS_COMPACT =
+  'grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-2'
+
 export function BookmarkGrid() {
   const allCards = useBookmarkStore((s) => s.cards)
   const allCategories = useBookmarkStore((s) => s.categories)
@@ -511,10 +519,14 @@ function CategorySection({
   // section 整体为空时（无子文件夹、无书签）也显示出来——保持目录结构可见
   const sectionIsEmpty = subFolders.length === 0 && directCards.length === 0
   const addCardHeightClass =
-    cardSize === 'sm' ? 'h-24' : cardSize === 'lg' ? 'h-36' : 'h-32'
+    cardSize === 'compact' ? 'h-28' : cardSize === 'large' ? 'h-32' : 'h-24'
   // + 占位用正方形：宽=高，避免在网格列里被拉成长方形
   const addCardSquareClass =
-    cardSize === 'sm' ? 'w-24 h-24' : cardSize === 'lg' ? 'w-36 h-36' : 'w-32 h-32'
+    cardSize === 'compact'
+      ? 'w-28 h-28'
+      : cardSize === 'large'
+        ? 'w-32 h-32'
+        : 'w-24 h-24'
 
   return (
     <section
@@ -712,7 +724,7 @@ function CategorySection({
                   items={directCards.map((c) => c.id)}
                   strategy={rectSortingStrategy}
                 >
-                  <div className={GRID_COLS}>
+                  <div className={cardSize === 'compact' ? GRID_COLS_COMPACT : GRID_COLS}>
                     {directCards.map((card) => (
                       <BookmarkCardItem key={card.id} card={card} />
                     ))}

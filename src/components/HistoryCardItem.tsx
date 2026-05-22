@@ -29,27 +29,23 @@ export function HistoryCardItem({ item }: Props) {
   const addCardFromHistory = useBookmarkStore((s) => s.addCardFromHistory)
   const deleteHistoryUrl = useBookmarkStore((s) => s.deleteHistoryUrl)
   const cardSize = useBookmarkStore((s) => s.settings.cardSize)
+  const cardIconSize = useBookmarkStore((s) => s.settings.cardIconSize)
+  // v0.21.19：compact 走单独的方形分支（与 CompactBookmarkCard 对齐尺寸）
+  // large = 原「中」(h-32)，standard = 原「小」(h-24)
   const size =
-    cardSize === 'sm'
+    cardSize === 'large'
       ? {
+          card: 'p-3.5 h-32 gap-2.5',
+          icon: 'w-9 h-9 rounded-lg',
+          title: 'text-sm font-semibold leading-snug line-clamp-2',
+          host: 'text-[11px]',
+        }
+      : {
           card: 'p-3 h-24 gap-2',
           icon: 'w-8 h-8 rounded',
           title: 'text-sm font-medium truncate',
           host: 'text-[11px]',
         }
-      : cardSize === 'lg'
-        ? {
-            card: 'p-4 h-36 gap-3',
-            icon: 'w-10 h-10 rounded-xl',
-            title: 'text-[15px] font-semibold leading-snug line-clamp-2',
-            host: 'text-xs',
-          }
-        : {
-            card: 'p-3.5 h-32 gap-2.5',
-            icon: 'w-9 h-9 rounded-lg',
-            title: 'text-sm font-semibold leading-snug line-clamp-2',
-            host: 'text-[11px]',
-          }
 
   const openUrl = () => {
     window.open(item.url, '_blank', 'noopener,noreferrer')

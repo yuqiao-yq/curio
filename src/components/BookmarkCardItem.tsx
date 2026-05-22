@@ -37,6 +37,14 @@ export interface SearchMeta {
   dupCategoryPaths: string[]
 }
 
+/**
+ * 三档样式（v0.21.19 起）：
+ * - compact 精简：走单独的 CompactBookmarkCard 渲染分支，不复用本表
+ * - standard 标准：默认尺寸，含域名 / 备注 / tags
+ * - large 大：信息更舒展
+ *
+ * 注：compact 也放进 Record 是为了类型完整性；CompactBookmarkCard 不读它。
+ */
 const CARD_SIZE_STYLES: Record<
   UserSettings['cardSize'],
   {
@@ -49,7 +57,9 @@ const CARD_SIZE_STYLES: Record<
     addNote: string
   }
 > = {
-  sm: {
+  // compact 在 BookmarkCardItemImpl 里走单独的 CompactBookmarkCard 分支，
+  // 这里的值只在「编辑态退回标准卡渲染」时被读到 → 给个紧凑的兜底
+  compact: {
     card: 'p-3 h-24 gap-2',
     editingCard: 'p-3 min-h-24 gap-2',
     icon: 'w-8 h-8 rounded',
@@ -58,7 +68,18 @@ const CARD_SIZE_STYLES: Record<
     note: 'text-[11px] leading-snug line-clamp-1 rounded px-1.5 py-1 -mx-1.5',
     addNote: 'text-[11px] rounded px-1.5 py-1 -mx-1.5',
   },
-  md: {
+  // standard = 原「小」(h-24) — 老 'sm' 用户迁移落到这里
+  standard: {
+    card: 'p-3 h-24 gap-2',
+    editingCard: 'p-3 min-h-24 gap-2',
+    icon: 'w-8 h-8 rounded',
+    title: 'text-sm font-semibold leading-snug truncate text-slate-800 dark:text-slate-100',
+    host: 'text-[11px]',
+    note: 'text-[11px] leading-snug line-clamp-1 rounded px-1.5 py-1 -mx-1.5',
+    addNote: 'text-[11px] rounded px-1.5 py-1 -mx-1.5',
+  },
+  // large = 原「中」(h-32) — 老 'md' / 'lg' 用户迁移落到这里
+  large: {
     card: 'p-3.5 h-32 gap-2.5',
     editingCard: 'p-3.5 min-h-32 gap-2.5',
     icon: 'w-9 h-9 rounded-lg',
@@ -66,15 +87,6 @@ const CARD_SIZE_STYLES: Record<
     host: 'text-[11px]',
     note: 'text-xs leading-snug line-clamp-2 rounded-md px-2 py-1.5 -mx-2',
     addNote: 'text-xs rounded-md px-2 py-1.5 -mx-2',
-  },
-  lg: {
-    card: 'p-4 h-36 gap-3',
-    editingCard: 'p-4 min-h-36 gap-3',
-    icon: 'w-10 h-10 rounded-xl',
-    title: 'text-[15px] font-semibold leading-snug line-clamp-2 text-slate-800 dark:text-slate-100',
-    host: 'text-xs',
-    note: 'text-xs leading-snug line-clamp-3 rounded-md px-2.5 py-2 -mx-2.5',
-    addNote: 'text-xs rounded-md px-2.5 py-2 -mx-2.5',
   },
 }
 
@@ -101,7 +113,11 @@ function BookmarkCardItemImpl({
   const recordRecentOpen = useBookmarkStore((s) => s.recordRecentOpen)
   const setSearchKeyword = useBookmarkStore((s) => s.setSearchKeyword)
   const cardSize = useBookmarkStore((s) => s.settings.cardSize)
-  const size = CARD_SIZE_STYLES[cardSize ?? 'md'] ?? CARD_SIZE_STYLES.md
+  const cardIconSize = useBookmarkStore((s) => s.settings.cardIconSize)
+  const size = CARD_SIZE_STYLES[cardSize ?? 'standard'] ?? CARD_SIZE_STYLES.standard
+  // v0.21.19：cardIconSize='small' 时把图标容器（含底图层）缩到 favicon 视觉权重
+  const iconContainerCls = cardIconSize === 'small' ? 'w-6 h-6 rounded' : size.icon
+  const iconVariant: 'small' | 'standard' = cardIconSize === 'small' ? 'small' : 'standard'
   /**
    * 该卡是否已被 §6.1 抓取过正文（成功状态）。
    * 由 usePageIndex store 统一广播，避免每张卡片各自查 dexie。
@@ -241,6 +257,28 @@ function BookmarkCardItemImpl({
       draftIcon !== card.icon
     )
 
+  /**
+   * v0.21.19 精简档：单独分支渲染。
+   * - 不显示域名/备注/tags/hover 菜单（精简模式的核心是只看图标 + 名称）
+   * - 编辑态仍走默认分支（标准卡），避免精简卡里塞两个输入框
+   * - drop / drag 行为不受影响：dnd-kit ref 仍挂在外层 <div>
+   */
+  if (cardSize === 'compact' && !editing) {
+    return (
+      <CompactBookmarkCard
+        card={card}
+        setRefs={setRefs}
+        style={style}
+        dragProps={dragProps}
+        iconVariant={iconVariant}
+        onClick={(e) => {
+          if (e.defaultPrevented) return
+          openUrl()
+        }}
+      />
+    )
+  }
+
   return (
     <>
     <div
@@ -282,7 +320,7 @@ function BookmarkCardItemImpl({
                   onClick={(e) => { e.stopPropagation(); open() }}
                   title="点击修改图标"
                   className={cn(
-                    size.icon,
+                    iconContainerCls,
                     'shrink-0 flex items-center justify-center',
                     'bg-slate-100 dark:bg-slate-700 hover:ring-2 hover:ring-brand/40 transition',
                   )}
@@ -290,6 +328,7 @@ function BookmarkCardItemImpl({
                   <CardIconView
                     icon={draftIcon}
                     fallbackUrl={draftUrl || card.url}
+                    variant={iconVariant}
                   />
                 </button>
               )}
@@ -298,12 +337,12 @@ function BookmarkCardItemImpl({
         ) : (
           <div
             className={cn(
-              size.icon,
+              iconContainerCls,
               'shrink-0 flex items-center justify-center',
               'bg-slate-100 dark:bg-slate-700 ring-1 ring-slate-200/70 dark:ring-slate-600/60',
             )}
           >
-            <CardIconView icon={card.icon} fallbackUrl={card.url} />
+            <CardIconView icon={card.icon} fallbackUrl={card.url} variant={iconVariant} />
           </div>
         )}
 
@@ -653,14 +692,24 @@ function CardTagChips({
 export function CardIconView({
   icon,
   fallbackUrl,
+  variant = 'standard',
 }: {
   icon?: string
   fallbackUrl: string
+  /** v0.21.19：'small' 让 emoji/图片/favicon 同步缩小（≈ 浏览器 favicon 视觉权重） */
+  variant?: 'small' | 'standard'
 }) {
+  const small = variant === 'small'
+  const imgCls = small
+    ? 'w-4 h-4 rounded-sm object-contain'
+    : 'w-7 h-7 rounded-sm object-contain'
   if (icon && !isImageIcon(icon)) {
     // emoji / 文本
     return (
-      <span className="text-xl leading-none select-none" aria-hidden>
+      <span
+        className={cn(small ? 'text-base' : 'text-xl', 'leading-none select-none')}
+        aria-hidden
+      >
         {icon}
       </span>
     )
@@ -671,7 +720,7 @@ export function CardIconView({
       <img
         src={icon}
         alt=""
-        className="w-7 h-7 rounded-sm object-contain"
+        className={imgCls}
         onError={(e) => {
           ;(e.currentTarget as HTMLImageElement).style.visibility = 'hidden'
         }}
@@ -682,9 +731,9 @@ export function CardIconView({
   return (
     <FaviconImg
       url={fallbackUrl}
-      size={28}
-      className="w-7 h-7 rounded-sm object-contain"
-      fallbackClassName="w-7 h-7 rounded-sm text-xs"
+      size={small ? 18 : 28}
+      className={imgCls}
+      fallbackClassName={cn(small ? 'w-4 h-4 text-[10px]' : 'w-7 h-7 text-xs', 'rounded-sm')}
     />
   )
 }
@@ -700,7 +749,10 @@ export function CardIconView({
  */
 function CardDragPreviewImpl({ card }: { card: BookmarkCard }) {
   const cardSize = useBookmarkStore((s) => s.settings.cardSize)
-  const size = CARD_SIZE_STYLES[cardSize ?? 'md'] ?? CARD_SIZE_STYLES.md
+  const cardIconSize = useBookmarkStore((s) => s.settings.cardIconSize)
+  const size = CARD_SIZE_STYLES[cardSize ?? 'standard'] ?? CARD_SIZE_STYLES.standard
+  const iconContainerCls = cardIconSize === 'small' ? 'w-6 h-6 rounded' : size.icon
+  const iconVariant: 'small' | 'standard' = cardIconSize === 'small' ? 'small' : 'standard'
 
   return (
     <div
@@ -720,12 +772,12 @@ function CardDragPreviewImpl({ card }: { card: BookmarkCard }) {
       <div className="flex items-start gap-2">
         <div
           className={cn(
-            size.icon,
+            iconContainerCls,
             'shrink-0 flex items-center justify-center',
             'bg-slate-100 dark:bg-slate-700 ring-1 ring-slate-200/70 dark:ring-slate-600/60',
           )}
         >
-          <CardIconView icon={card.icon} fallbackUrl={card.url} />
+          <CardIconView icon={card.icon} fallbackUrl={card.url} variant={iconVariant} />
         </div>
         <div className="flex-1 min-w-0">
           <div className={size.title} title={card.title}>
@@ -751,3 +803,72 @@ function CardDragPreviewImpl({ card }: { card: BookmarkCard }) {
 }
 
 export const CardDragPreview = memo(CardDragPreviewImpl)
+
+/**
+ * v0.21.19 精简档书签卡片。
+ *
+ * 视觉：默认透明无边、只有居中图标 + 下方名称；hover 时切换到 ghost 灰底 + 阴影 + 轻浮起。
+ * 交互：整卡点击打开（与标准卡一致）；不暴露 hover 菜单——精简模式信息密度优先，
+ *      编辑 / 删除请通过卡片右键或临时切回标准档操作。
+ */
+function CompactBookmarkCard({
+  card,
+  setRefs,
+  style,
+  dragProps,
+  iconVariant = 'standard',
+  onClick,
+}: {
+  card: BookmarkCard
+  setRefs: (el: HTMLDivElement | null) => void
+  style: React.CSSProperties
+  dragProps: Record<string, unknown>
+  /** v0.21.19：'small' 把图标 + 底图层同步缩小 */
+  iconVariant?: 'small' | 'standard'
+  onClick: (e: React.MouseEvent) => void
+}) {
+  const small = iconVariant === 'small'
+  return (
+    <div
+      ref={setRefs}
+      style={style}
+      {...dragProps}
+      data-dnd-card={card.id}
+      onClick={onClick}
+      className={cn(
+        'group/compact select-none cursor-pointer',
+        'flex flex-col items-center justify-center gap-2.5',
+        // 与 BookmarkGrid 中 + 占位 compact 档对齐：w/h 28（112px），整体方形
+        'w-28 h-28 justify-self-center',
+        'rounded-xl px-3 py-3',
+        // 默认：完全透明（让背景墙纸/容器透出）
+        'bg-transparent',
+        // hover：毛玻璃方形 + 上浮 + 与 .card:hover 同款双层投影
+        'transition-all duration-200 ease-out',
+        'hover:bg-white/65 dark:hover:bg-slate-800/55 hover:backdrop-blur',
+        'hover:-translate-y-0.5',
+        'hover:shadow-[0_2px_4px_rgba(15,23,42,0.05),0_12px_24px_-4px_rgba(99,102,241,0.18)]',
+        'dark:hover:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_14px_28px_-4px_rgba(99,102,241,0.35)]',
+      )}
+      title={`${card.title}\n${card.url}`}
+    >
+      <div
+        className={cn(
+          small ? 'w-8 h-8 rounded-md' : 'w-11 h-11 rounded-lg',
+          'shrink-0 flex items-center justify-center',
+          'bg-slate-100/80 dark:bg-slate-700/60 ring-1 ring-slate-200/70 dark:ring-slate-600/60',
+        )}
+      >
+        <CardIconView icon={card.icon} fallbackUrl={card.url} variant={iconVariant} />
+      </div>
+      <div
+        className={cn(
+          'w-full text-center text-xs leading-tight truncate',
+          'text-slate-700 dark:text-slate-200',
+        )}
+      >
+        {card.title}
+      </div>
+    </div>
+  )
+}

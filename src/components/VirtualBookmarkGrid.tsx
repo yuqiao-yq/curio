@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { BookmarkCard } from '../types/bookmark'
 import { BookmarkCardItem } from './BookmarkCardItem'
+import { useBookmarkStore } from '../stores/useBookmarkStore'
 
 /* ─────────────────────────────────────────────────────────────
  * VirtualBookmarkGrid（P0-1）
@@ -44,6 +45,16 @@ function colsForWidth(w: number): number {
   return 2
 }
 
+/**
+ * compact 档：按 BookmarkGrid GRID_COLS_COMPACT 同款 `auto-fill minmax(112px,1fr)` 计算列数。
+ * 单卡宽 112px，gap-2 = 8px；列数 = floor((w + gap) / (112 + gap))，最少 1 列。
+ */
+const COMPACT_CARD = 112
+const COMPACT_GAP = 8
+function compactColsForWidth(w: number): number {
+  return Math.max(1, Math.floor((w + COMPACT_GAP) / (COMPACT_CARD + COMPACT_GAP)))
+}
+
 /** 向上找最近的可滚动祖先；找不到回退到 documentElement */
 function findScrollParent(el: HTMLElement | null): HTMLElement {
   let cur: HTMLElement | null = el?.parentElement ?? null
@@ -57,28 +68,33 @@ function findScrollParent(el: HTMLElement | null): HTMLElement {
 }
 
 export function VirtualBookmarkGrid({ items, threshold = 60 }: Props) {
+  const cardSize = useBookmarkStore((s) => s.settings.cardSize)
+  const isCompact = cardSize === 'compact'
   const parentRef = useRef<HTMLDivElement | null>(null)
   const [scrollEl, setScrollEl] = useState<HTMLElement | null>(null)
-  const [cols, setCols] = useState<number>(() =>
-    typeof window === 'undefined' ? 5 : colsForWidth(window.innerWidth),
-  )
+  const [cols, setCols] = useState<number>(() => {
+    if (typeof window === 'undefined') return 5
+    return isCompact
+      ? compactColsForWidth(window.innerWidth)
+      : colsForWidth(window.innerWidth)
+  })
 
   // 找滚动父节点（mount 后 DOM 才有）
   useLayoutEffect(() => {
     setScrollEl(findScrollParent(parentRef.current))
   }, [])
 
-  // 监听容器宽度变化推导列数
+  // 监听容器宽度变化推导列数；isCompact 切换时立即用最新策略复算一次
   useEffect(() => {
     const el = parentRef.current
     if (!el) return
-    const ro = new ResizeObserver(([entry]) => {
-      const w = entry.contentRect.width
-      setCols(colsForWidth(w))
-    })
+    const recalc = (w: number) =>
+      setCols(isCompact ? compactColsForWidth(w) : colsForWidth(w))
+    recalc(el.getBoundingClientRect().width)
+    const ro = new ResizeObserver(([entry]) => recalc(entry.contentRect.width))
     ro.observe(el)
     return () => ro.disconnect()
-  }, [])
+  }, [isCompact])
 
   const enabled = items.length >= threshold
 
@@ -91,9 +107,10 @@ export function VirtualBookmarkGrid({ items, threshold = 60 }: Props) {
     return out
   }, [items, cols, enabled])
 
-  // gap-3 = 0.75rem = 12px；行高估算给个保守初值，measureElement 之后会自动校正
-  const ROW_GAP = 12
-  const ESTIMATED_ROW_HEIGHT = 140
+  // 行间距与 BookmarkGrid 一致：compact gap-2 / 其它 gap-3
+  // 行高估算给个保守初值，measureElement 之后会自动校正
+  const ROW_GAP = isCompact ? 8 : 12
+  const ESTIMATED_ROW_HEIGHT = isCompact ? 112 : 140
 
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -111,7 +128,13 @@ export function VirtualBookmarkGrid({ items, threshold = 60 }: Props) {
   // 小集合直接平铺，省去 windowing 复杂度
   if (!enabled) {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+      <div
+        className={
+          isCompact
+            ? 'grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-2'
+            : 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3'
+        }
+      >
         {items.map(({ card, categoryPath, dupCount, dupCategoryPaths }) => (
           <BookmarkCardItem
             key={card.id}
@@ -140,7 +163,7 @@ export function VirtualBookmarkGrid({ items, threshold = 60 }: Props) {
             style={{ transform: `translateY(${vr.start}px)` }}
           >
             <div
-              className="grid gap-3"
+              className={isCompact ? 'grid gap-2' : 'grid gap-3'}
               style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
             >
               {row.map(({ card, categoryPath, dupCount, dupCategoryPaths }) => (

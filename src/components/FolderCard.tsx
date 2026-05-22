@@ -149,24 +149,20 @@ export function FolderCard({ category, draggable = false }: Props) {
   }
   // 拖动自己时本卡不应该高亮自己（hint 检测里已防护，这里再做一道兜底）
   const showDropHint = isDropHovered && !isDragging
+  // FolderCard 不参与 compact 模式（文件夹本身需要展示子项数量），compact 落到「小」尺寸
+  // large = 原「中」(h-32)，standard/compact = 原「小」(h-24)
   const size =
-    cardSize === 'sm'
+    cardSize === 'large'
       ? {
+          card: 'p-3.5 h-32 gap-2.5',
+          editingCard: 'p-3.5 min-h-32 gap-2.5',
+          icon: 'w-9 h-9 rounded-lg',
+        }
+      : {
           card: 'p-3 h-24 gap-2',
           editingCard: 'p-3 min-h-24 gap-2',
           icon: 'w-8 h-8 rounded',
         }
-      : cardSize === 'lg'
-        ? {
-            card: 'p-4 h-36 gap-3',
-            editingCard: 'p-4 min-h-36 gap-3',
-            icon: 'w-10 h-10 rounded-xl',
-          }
-        : {
-            card: 'p-3.5 h-32 gap-2.5',
-            editingCard: 'p-3.5 min-h-32 gap-2.5',
-            icon: 'w-9 h-9 rounded-lg',
-          }
 
   // 防止"拖拽结束 → mouseup 触发 onClick → 误进入子文件夹"
   // 与 BookmarkCardItem 同款保护：原生 pointerdown/up 监听位移 > 5px 标记

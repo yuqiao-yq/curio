@@ -11,6 +11,10 @@ import { IconView } from '../utils/icon'
 const GRID_COLS =
   'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3'
 
+/** compact 档同款收紧网格：固定列宽 112px + gap-2；与 BookmarkGrid 内 GRID_COLS_COMPACT 同步 */
+const GRID_COLS_COMPACT =
+  'grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-2'
+
 /**
  * 最近使用 模块：常驻在主页面顶部（搜索模式与无激活分类时不渲染）
  *
@@ -24,6 +28,7 @@ const GRID_COLS =
  * - 截断到 recentLimit
  */
 export function RecentSection() {
+  const cardSize = useBookmarkStore((s) => s.settings.cardSize)
   const recentEntries = useBookmarkStore((s) => s.recentEntries)
   const recentLimit = useBookmarkStore((s) => s.recentLimit)
   const setRecentLimit = useBookmarkStore((s) => s.setRecentLimit)
@@ -206,7 +211,7 @@ export function RecentSection() {
       {!collapsed && (
         <>
           {visibleItems.length > 0 ? (
-            <div className={GRID_COLS}>
+            <div className={cardSize === 'compact' ? GRID_COLS_COMPACT : GRID_COLS}>
               {visibleItems.map((it) =>
                 it.kind === 'bookmark' ? (
                   <BookmarkCardItem
