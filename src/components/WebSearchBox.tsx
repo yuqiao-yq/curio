@@ -137,7 +137,16 @@ export function WebSearchBox() {
   const [engine, setEngine] = useState<Engine>(() => loadEngine())
   const [raw, setRaw] = useState('')
   const [open, setOpen] = useState(false)
+  const [hovered, setHovered] = useState(false)
+  const [focused, setFocused] = useState(false)
   const wrapRef = useRef<HTMLDivElement | null>(null)
+
+  /**
+   * v0.21.19：默认收起态，只露引擎按钮 + "搜索"占位；
+   * hover / 聚焦 / 已有输入 / 引擎下拉打开 → 展开到最大宽度，展示完整提示。
+   * 用 max-width 而非 width 做过渡，避免 flex 父容器抢回宽度造成跳变。
+   */
+  const expanded = hovered || focused || raw.length > 0 || open
 
   // 本地搜索：把"实际查询词"同步到 store（@web 模式时清掉，避免主区被误切到搜索视图）
   const cards = useBookmarkStore((s) => s.cards)
@@ -344,7 +353,19 @@ export function WebSearchBox() {
   )
 
   return (
-    <div ref={wrapRef} className="relative flex-1 max-w-3xl mx-auto">
+    <div
+      ref={wrapRef}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className={cn(
+        'relative mx-auto',
+        // ease-out-expo 让展开/收起带回弹手感而不是机械匀速
+        'transition-[width] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]',
+      )}
+      // 用 width 而非 maxWidth：grid auto 轨道下 max-width 不会撑开盒子，
+      // 必须显式给出宽度才能真正达到目标尺寸；max-width:100% 兜底窄屏
+      style={{ width: expanded ? 540 : 360, maxWidth: '100%' }}
+    >
       <div
         className={cn(
           'flex items-center gap-1.5 h-11 pl-2.5 pr-1.5 rounded-2xl',
@@ -352,7 +373,7 @@ export function WebSearchBox() {
           'bg-white/80 dark:bg-slate-900/75 backdrop-blur',
           'shadow-sm shadow-slate-900/5',
           'focus-within:border-brand/70 focus-within:ring-4 focus-within:ring-brand/15 focus-within:shadow-md focus-within:bg-white dark:focus-within:bg-slate-900',
-          'transition-all',
+          'transition-all duration-300',
         )}
       >
         {/* 引擎选择按钮 */}
@@ -377,18 +398,31 @@ export function WebSearchBox() {
           <span className="text-[10px] text-slate-400 leading-none">▾</span>
         </button>
 
-        <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-0.5 shrink-0" />
-
-        {modeChip}
+        {/* divider + 模式徽标：收起态隐藏（淡出 + 收宽），让搜索框保持轻盈 */}
+        <div
+          className={cn(
+            'flex items-center gap-1.5 overflow-hidden shrink-0',
+            'transition-all duration-300 ease-out',
+            expanded
+              ? 'max-w-[120px] opacity-100'
+              : 'max-w-0 opacity-0 -ml-1.5',
+          )}
+          aria-hidden={!expanded}
+        >
+          <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-0.5 shrink-0" />
+          {modeChip}
+        </div>
 
         <input
           value={raw}
           onChange={(e) => setRaw(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') submit()
             if (e.key === 'Escape') setRaw('')
           }}
-          placeholder="搜索书签、输入网址，或使用 @web / #标签 / @ai"
+          placeholder={expanded ? '搜索书签、输入网址，或使用 @web / #标签 / @ai' : '搜索'}
           className={cn(
             'flex-1 min-w-0 h-full px-2 text-[15px] bg-transparent outline-none',
             'placeholder:text-slate-400',
@@ -410,8 +444,12 @@ export function WebSearchBox() {
           disabled={
             !parsed.q || parsed.mode === 'tag' || parsed.mode === 'ai'
           }
+          tabIndex={expanded ? 0 : -1}
+          aria-hidden={!expanded}
           className={cn(
-            'h-8 px-3 rounded-xl text-xs font-semibold transition-colors shrink-0',
+            'h-8 rounded-xl text-xs font-semibold shrink-0 overflow-hidden whitespace-nowrap',
+            'transition-all duration-300 ease-out',
+            expanded ? 'max-w-[120px] px-3 opacity-100' : 'max-w-0 px-0 opacity-0',
             parsed.q && parsed.mode !== 'tag' && parsed.mode !== 'ai'
               ? 'bg-brand text-white hover:bg-brand-600'
               : 'bg-slate-100 text-slate-400 dark:bg-slate-700 dark:text-slate-500 cursor-not-allowed',

@@ -249,7 +249,7 @@ export function Topbar() {
     >
       <h1 className="text-sm font-semibold text-brand/70 hover:text-brand transition-colors leading-none tracking-tight">Tab It</h1>
       {/* 中央：网页搜索框（替代被覆盖的浏览器地址栏，支持切换搜索引擎） */}
-      <div className="justify-self-center w-full max-w-[720px]">
+      <div className="justify-self-center w-full max-w-[540px]">
         <WebSearchBox />
       </div>
       <div className="flex items-center gap-2 justify-self-end opacity-70 hover:opacity-100 transition-opacity">
