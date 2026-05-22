@@ -15,6 +15,7 @@
     "zip:firefox": "wxt zip -b firefox",
     "zip:all": "wxt zip && wxt zip -b firefox",
     "compile": "tsc --noEmit",
+    "release": "bash scripts/release.sh",
     "postinstall": "wxt prepare"
   },
   "dependencies": {
@@ -27,6 +28,7 @@
     "dexie": "^4.0.8",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-easy-crop": "^5.5.7",
     "tailwind-merge": "^2.5.2",
     "uuid": "^10.0.0",
     "zustand": "^4.5.5"
