@@ -73,18 +73,18 @@ ok "工作区干净"
 
 log "检查 tag $VERSION 是否已存在 ..."
 if git rev-parse "$VERSION" >/dev/null 2>&1; then
-  fatal "本地已存在 tag $VERSION，请换个版本号或先 git tag -d $VERSION"
+  fatal "本地已存在 tag ${VERSION}，请换个版本号或先 git tag -d ${VERSION}"
 fi
 if git ls-remote --tags origin "refs/tags/$VERSION" 2>/dev/null \
   | grep -q "refs/tags/$VERSION"; then
-  fatal "远端已存在 tag $VERSION（git push origin --delete $VERSION 可删除）"
+  fatal "远端已存在 tag ${VERSION}（git push origin --delete ${VERSION} 可删除）"
 fi
 ok "tag $VERSION 可用"
 
 log "检查当前分支 ..."
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 if [[ "$BRANCH" != "main" && "$BRANCH" != "master" ]]; then
-  warn "当前不在 main/master 分支（实际：$BRANCH），3 秒后继续，Ctrl+C 取消 ..."
+  warn "当前不在 main/master 分支（实际：${BRANCH}），3 秒后继续，Ctrl+C 取消 ..."
   sleep 3
 fi
 
@@ -105,7 +105,9 @@ fi
 PLAIN_VER="${VERSION#v}"
 log "bump package.json version → $PLAIN_VER ..."
 # 失败回滚：保存原始内容到临时文件，trap 在异常时还原
-PKG_BACKUP="$(mktemp -t tabit-pkg-backup-XXXX)"
+# 简单拼接路径：不走 mktemp / 命令替换，避免 set -u + 子 shell 的边界 bug
+# 仅用于当前进程，PID 保证唯一，TMPDIR 有默认值
+PKG_BACKUP="${TMPDIR:-/tmp}/tabit-pkg-backup-$$.json"
 cp package.json "$PKG_BACKUP"
 restore_pkg() {
   if [[ -f "$PKG_BACKUP" ]]; then
@@ -125,11 +127,11 @@ node -e '
 ok "package.json version = $PLAIN_VER"
 
 # ─── pnpm build 验证 ──────────────────────────────
-BUILD_LOG="$(mktemp -t tabit-build-log-XXXX)"
-log "pnpm build 验证（日志：$BUILD_LOG）..."
+BUILD_LOG="${TMPDIR:-/tmp}/tabit-build-log-$$.log"
+log "pnpm build 验证（日志：${BUILD_LOG}）..."
 if ! pnpm build >"$BUILD_LOG" 2>&1; then
   tail -30 "$BUILD_LOG"
-  fatal "pnpm build 失败，已回滚 package.json，详细日志：$BUILD_LOG"
+  fatal "pnpm build 失败，已回滚 package.json，详细日志：${BUILD_LOG}"
 fi
 ok "构建通过（产物在 .output/chrome-mv3/）"
 
