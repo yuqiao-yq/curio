@@ -38,22 +38,79 @@
    * 视觉填充（毛玻璃 vs 实色）由 body 上的 modifier class 控制，
    * 一处改、所有派生 .card 节点都会同步切换（BookmarkCardItem /
    * FolderCard / HistoryCardItem / + 占位卡 / DragPreview）。
+   *
+   * 阴影方案（v0.21.19 升级）：
+   * - 用一组「微妙双层投影」代替 Tailwind 默认 shadow-sm，让卡片在
+   *   半透明 / 毛玻璃背景上有清晰的边界感、不"飘"
+   * - 第一层 1px / 2px 紧贴底缘的硬阴影 → 模拟"贴在表面"
+   * - 第二层 4~12px offset / 大 blur 的扩散阴影 → 模拟"轻轻浮起"
+   * - hover 时第二层加大并带一点 brand 色调，提示可交互
+   * - dark 模式 alpha 提升到 25~35%，因为暗底上需要更强对比才能感知
+   *
+   * 颜色全部走 rgba 而非 Tailwind 的 shadow-color 工具类，是为了同时
+   * 描述两层阴影 + 颜色透明度，Tailwind 工具类一次只能定义一组。
    */
   .card {
     @apply border border-slate-200/60 dark:border-slate-700/60;
-    @apply rounded-xl shadow-sm hover:shadow-md transition-all;
+    @apply rounded-xl transition-all;
     /* 默认 = 毛玻璃（半透明 + backdrop-blur） */
     @apply bg-white/70 dark:bg-slate-800/60 backdrop-blur;
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.04),
+      0 4px 10px -2px rgba(15, 23, 42, 0.06);
+  }
+
+  .card:hover {
+    box-shadow:
+      0 2px 4px rgba(15, 23, 42, 0.05),
+      0 12px 24px -4px rgba(99, 102, 241, 0.18);
+  }
+
+  .dark .card {
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.25),
+      0 6px 14px -2px rgba(0, 0, 0, 0.35);
+  }
+
+  .dark .card:hover {
+    box-shadow:
+      0 2px 4px rgba(0, 0, 0, 0.3),
+      0 14px 28px -4px rgba(99, 102, 241, 0.35);
   }
 
   /*
    * 用户在「样式管理 → 卡片毛玻璃」关闭时，body 加 .tabit-cards-solid，
    * 切回纯实色背景，移除 backdrop-filter；对比度更好、渲染更轻。
+   * 实色模式下卡片不再"半透明融入背景"，因此阴影稍稍加深一档，
+   * 进一步强化"独立色块"的视觉边界。
    */
   body.tabit-cards-solid .card {
     @apply bg-white dark:bg-slate-800;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.05),
+      0 6px 16px -3px rgba(15, 23, 42, 0.08);
+  }
+
+  body.tabit-cards-solid .card:hover {
+    box-shadow:
+      0 2px 4px rgba(15, 23, 42, 0.06),
+      0 14px 28px -4px rgba(99, 102, 241, 0.2);
+  }
+
+  /* dark 类是加在 <html> 上的（见 App.tsx 的 root.classList.toggle('dark', ...)），
+     所以 .dark 必须出现在 body.tabit-cards-solid 之前，不能写在同一选择器里 */
+  .dark body.tabit-cards-solid .card {
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.3),
+      0 8px 18px -3px rgba(0, 0, 0, 0.4);
+  }
+
+  .dark body.tabit-cards-solid .card:hover {
+    box-shadow:
+      0 2px 4px rgba(0, 0, 0, 0.35),
+      0 16px 32px -4px rgba(99, 102, 241, 0.4);
   }
 
   .btn {

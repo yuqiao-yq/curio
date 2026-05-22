@@ -1,45 +1,39 @@
 import { create } from 'zustand'
 import { v4 as uuid } from 'uuid'
-import { browser } from 'wxt/browser'
-import type { BookmarkCard, Category, UserSettings } from '../types/bookmark'
-import { DEFAULT_SETTINGS } from '../types/bookmark'
-import { getRepository } from '../repositories'
-import { importFromBrowserBookmarks } from '../services/bookmarkImporter'
+import type { BookmarkCard, Category, UserSettings } from '../../types/bookmark'
+import { DEFAULT_SETTINGS } from '../../types/bookmark'
+import type { BrowserHistoryItem, RecentEntry } from '../../types/recent'
+import { DEFAULT_RECENT_LIMIT, MAX_RECENT_BUFFER } from '../../types/recent'
+import {
+  getBrowserHistoryRepository,
+  getRecentRepository,
+  getRepository,
+} from '../../repositories'
+import { importFromBrowserBookmarks } from '../../services/bookmarkImporter'
 import {
   exportToBrowserBookmarks,
   type ExportOptions,
   type ExportResult,
-} from '../services/bookmarkExporter'
+} from '../../services/bookmarkExporter'
 
-/** browser.storage.local key（与 LocalRepository 的 KEYS 平级，专给"最近使用"使用） */
-const RECENT_ENTRIES_KEY = 'tabit:recent'
-const RECENT_LIMIT_KEY = 'tabit:recentLimit'
-/** 默认显示数量；用户可在 RecentSection 中修改并持久化 */
-export const DEFAULT_RECENT_LIMIT = 8
-/** 内存中保留的最大条目数：留出余量，方便用户调大 N 时仍能显示历史；显示时再切片 */
-const MAX_RECENT_BUFFER = 100
+import { collectDescendantIds, groupBy, normalizeTags } from './helpers'
 
-/**
- * 最近使用记录：
- * - cardId: 引用 BookmarkCard.id；卡片被删除时会同步清理
- * - openedAt: 打开时间戳（ms），用于排序与去重决策
- */
-export interface RecentEntry {
-  cardId: string
-  openedAt: number
-}
+/* ──────────────────────────────────────────────────────────────────────
+ * 主书签状态：分类 / 卡片 / 最近使用 / 浏览器历史 / 用户设置。
+ *
+ * v0.21.x 把原 963 行单文件按职责拆为子模块：
+ *   - helpers.ts                          纯函数（normalizeTags / collectDescendantIds / groupBy）
+ *   - ../../types/recent.ts               公共类型与常量
+ *   - ../../repositories/LocalRecentRepository  最近使用本地存储 IO
+ *   - ../../repositories/BrowserHistoryAdapter  browser.history.* 适配（best-effort）
+ *
+ * 本文件只保留 Zustand store 定义本身 + settings 写盘 debounce。
+ * 所有外部导入路径保持不变（依赖 folder-with-index 解析）。
+ * ────────────────────────────────────────────────────────────────────── */
 
-/**
- * 浏览器历史条目（精简版，只保留 UI 渲染所需字段）。
- * 来自 browser.history.search()，不持久化到本地存储 —— 每次新开标签页时按需拉取。
- * 隐私考虑：浏览器原生历史本身已在用户掌控之中，我们只读不写、不复制到自己的存储里。
- */
-export interface BrowserHistoryItem {
-  url: string
-  title: string
-  /** 最后一次访问时间戳（ms）；某些浏览器返回的 lastVisitTime 可能为 undefined，统一兜底为 0 */
-  lastVisit: number
-}
+// 公共类型 / 常量重导出，保持原 useBookmarkStore.ts 的对外 API 不变
+export type { BrowserHistoryItem, RecentEntry }
+export { DEFAULT_RECENT_LIMIT }
 
 interface BookmarkState {
   categories: Category[]
@@ -180,10 +174,12 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
   async init() {
     set({ loading: true })
     const repo = getRepository()
-    const [categories, cards, recent, settings] = await Promise.all([
+    const recentRepo = getRecentRepository()
+    const [categories, cards, recentEntries, recentLimit, settings] = await Promise.all([
       repo.getCategories(),
       repo.getCards(),
-      loadRecentFromStorage(),
+      recentRepo.loadEntries(),
+      recentRepo.loadLimit(),
       repo.getSettings(),
     ])
     // 默认激活：排序第一的【顶层】分类（与用户在侧栏看到的"第一项"对齐）
@@ -191,13 +187,13 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     const firstTop = categories.find((c) => !c.parentId)
     // 清理脏数据：卡片可能已被删除
     const cardIdSet = new Set(cards.map((c) => c.id))
-    const cleanedEntries = recent.entries.filter((e) => cardIdSet.has(e.cardId))
+    const cleanedEntries = recentEntries.filter((e) => cardIdSet.has(e.cardId))
     set({
       categories,
       cards,
       activeCategoryId: firstTop?.id ?? categories[0]?.id ?? null,
       recentEntries: cleanedEntries,
-      recentLimit: recent.limit,
+      recentLimit,
       settings,
       loading: false,
       initialized: true,
@@ -416,7 +412,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
       (e) => !removedCardIds.has(e.cardId),
     )
     if (nextRecent.length !== get().recentEntries.length) {
-      void saveRecentEntries(nextRecent)
+      void getRecentRepository().saveEntries(nextRecent)
     }
     set({
       categories: remaining,
@@ -649,7 +645,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     // 同步清理"最近使用"，避免出现指向已删卡片的脏记录
     const nextRecent = get().recentEntries.filter((e) => e.cardId !== id)
     const recentChanged = nextRecent.length !== get().recentEntries.length
-    if (recentChanged) void saveRecentEntries(nextRecent)
+    if (recentChanged) void getRecentRepository().saveEntries(nextRecent)
     set({
       cards: get().cards.filter((c) => c.id !== id),
       recentEntries: nextRecent,
@@ -714,7 +710,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
       MAX_RECENT_BUFFER,
     )
     set({ recentEntries: next })
-    await saveRecentEntries(next)
+    await getRecentRepository().saveEntries(next)
   },
 
   async setRecentLimit(n) {
@@ -722,34 +718,25 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     const clamped = Math.max(1, Math.min(MAX_RECENT_BUFFER, Math.floor(n)))
     if (clamped === get().recentLimit) return
     set({ recentLimit: clamped })
-    await browser.storage.local.set({ [RECENT_LIMIT_KEY]: clamped })
+    await getRecentRepository().saveLimit(clamped)
   },
 
   async clearRecent() {
     if (get().recentEntries.length === 0) return
     set({ recentEntries: [] })
-    await saveRecentEntries([])
+    await getRecentRepository().saveEntries([])
   },
 
   async loadBrowserHistory(maxResults = MAX_RECENT_BUFFER) {
     // 关闭开关时不加载；防御性检查，避免被误调用拉取数据
     if (!get().settings.recentIncludeBrowserHistory) return
-    const items = await fetchBrowserHistory(maxResults)
+    const items = await getBrowserHistoryRepository().search(maxResults)
     set({ browserHistoryItems: items })
   },
 
   async deleteHistoryUrl(url) {
     // 1. 从浏览器原生历史中删除（如果可用）
-    try {
-      const api = (browser as unknown as {
-        history?: { deleteUrl?: (details: { url: string }) => Promise<void> }
-      }).history
-      if (api?.deleteUrl) {
-        await api.deleteUrl({ url })
-      }
-    } catch {
-      /* ignore: 没权限或浏览器不支持 */
-    }
+    await getBrowserHistoryRepository().deleteUrl(url)
     // 2. 同步内存状态，立即把卡片从 UI 移除（即使原生删除失败也保持 UI 一致）
     set({
       browserHistoryItems: get().browserHistoryItems.filter((it) => it.url !== url),
@@ -771,7 +758,14 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     const prev = get().settings
     const next: UserSettings = { ...prev, ...patch }
     set({ settings: next })
-    await getRepository().saveSettings(next)
+
+    // v0.21.x：把磁盘写入 debounce。背景模糊 / 字体色 / 壁纸颜色等滑块
+    // 拖动时会以 ~60Hz 触发本函数，之前每次都 chrome.storage.local.set(整个 settings)
+    // 既浪费 IO 又会拖慢主线程。现在 250ms idle 后只写最新一次。
+    //
+    // 内存状态依旧同步更新（上面的 set），UI 立刻响应；只有持久化被 defer。
+    // unload 路径由模块级 beforeunload/visibilitychange 监听兜底 flush。
+    scheduleSettingsSave()
 
     // ─── 副作用：开关切换时同步处理 browserHistoryItems ───
     const prevOn = !!prev.recentIncludeBrowserHistory
@@ -786,135 +780,37 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
   },
 }))
 
-/** BFS 收集所有后代分类 ID（与 LocalRepository 中的逻辑对称） */
-/**
- * 标签标准化：trim、过滤空、去重、单个 ≤ 12 字符、整体 ≤ 8 个。
- * 在所有 tag 写入前都过一遍，避免脏数据。
- */
-function normalizeTags(tags: string[] | undefined | null): string[] {
-  if (!Array.isArray(tags)) return []
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const raw of tags) {
-    if (typeof raw !== 'string') continue
-    const t = raw.trim().slice(0, 12)
-    if (!t) continue
-    const key = t.toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
-    out.push(t)
-    if (out.length >= 8) break
-  }
-  return out
+/* ──────────────────────────────────────────────────────────────────────
+ * settings 持久化的防抖调度器。
+ * - 250ms 是经验值：滑块拖动 250ms 内的连续 tick 合并成一次写；用户停下后
+ *   感知不到延迟。
+ * - 取 useBookmarkStore.getState() 而非闭包变量，确保 timer fire 时拿到的是最新合并值。
+ * - flushSettingsSave 在 beforeunload / visibilitychange=hidden 时同步触发，
+ *   避免用户拖完滑块立刻关掉标签页时丢失最新值。
+ * ────────────────────────────────────────────────────────────────────── */
+let settingsSaveTimer: ReturnType<typeof setTimeout> | null = null
+const SETTINGS_SAVE_DEBOUNCE_MS = 250
+
+function scheduleSettingsSave() {
+  if (settingsSaveTimer) clearTimeout(settingsSaveTimer)
+  settingsSaveTimer = setTimeout(() => {
+    settingsSaveTimer = null
+    void getRepository().saveSettings(useBookmarkStore.getState().settings)
+  }, SETTINGS_SAVE_DEBOUNCE_MS)
 }
 
-function collectDescendantIds(ids: string[], allCats: Category[]): Set<string> {
-  const result = new Set(ids)
-  const queue = [...ids]
-  while (queue.length > 0) {
-    const parentId = queue.shift()!
-    for (const c of allCats) {
-      if (c.parentId === parentId && !result.has(c.id)) {
-        result.add(c.id)
-        queue.push(c.id)
-      }
-    }
-  }
-  return result
+function flushSettingsSave() {
+  if (!settingsSaveTimer) return
+  clearTimeout(settingsSaveTimer)
+  settingsSaveTimer = null
+  void getRepository().saveSettings(useBookmarkStore.getState().settings)
 }
 
-/** 简易 groupBy：按 keyFn 分桶 */
-function groupBy<T, K>(arr: T[], keyFn: (item: T) => K): Map<K, T[]> {
-  const map = new Map<K, T[]>()
-  for (const item of arr) {
-    const k = keyFn(item)
-    const list = map.get(k)
-    if (list) list.push(item)
-    else map.set(k, [item])
-  }
-  return map
-}
-
-/**
- * 从 browser.storage.local 读取「最近使用」相关数据。
- * 故意走 browser.storage 直接访问而不扩 BookmarkRepository 接口：
- * - recent 数据是用户在本扩展内的临时行为日志，与"书签数据"语义不同
- * - 后续如要同步到云端，可单独抽 RecentRepository
- */
-async function loadRecentFromStorage(): Promise<{
-  entries: RecentEntry[]
-  limit: number
-}> {
-  try {
-    const result = await browser.storage.local.get([
-      RECENT_ENTRIES_KEY,
-      RECENT_LIMIT_KEY,
-    ])
-    const raw = result[RECENT_ENTRIES_KEY]
-    const entries = Array.isArray(raw)
-      ? (raw as RecentEntry[]).filter(
-          (e) => e && typeof e.cardId === 'string' && typeof e.openedAt === 'number',
-        )
-      : []
-    const limitRaw = result[RECENT_LIMIT_KEY]
-    const limit =
-      typeof limitRaw === 'number' && limitRaw > 0
-        ? Math.min(MAX_RECENT_BUFFER, Math.floor(limitRaw))
-        : DEFAULT_RECENT_LIMIT
-    return { entries, limit }
-  } catch {
-    return { entries: [], limit: DEFAULT_RECENT_LIMIT }
-  }
-}
-
-async function saveRecentEntries(entries: RecentEntry[]): Promise<void> {
-  try {
-    await browser.storage.local.set({ [RECENT_ENTRIES_KEY]: entries })
-  } catch {
-    // browser.storage 偶发失败不影响内存状态
-  }
-}
-
-/**
- * 调用 browser.history.search 拉取最近浏览器历史。
- *
- * 实现说明：
- * - WXT 的 browser 类型并非所有浏览器/版本都默认包含 history 字段，
- *   这里通过窄化的 unknown 断言访问，避免硬编码 chrome.* 失去 firefox 兼容
- * - text: '' 表示不限关键字；startTime: 0 表示自浏览器有记录起
- * - 返回结果统一映射为 { url, title, lastVisit }，并按 lastVisit 倒序
- * - 任何异常都吞掉返回空数组，保证 UI 不崩
- */
-async function fetchBrowserHistory(maxResults: number): Promise<BrowserHistoryItem[]> {
-  type RawHistoryItem = {
-    url?: string
-    title?: string
-    lastVisitTime?: number
-  }
-  type HistoryApi = {
-    search?: (query: {
-      text: string
-      startTime?: number
-      maxResults?: number
-    }) => Promise<RawHistoryItem[]>
-  }
-  try {
-    const api = (browser as unknown as { history?: HistoryApi }).history
-    if (!api?.search) return []
-    const raw = await api.search({
-      text: '',
-      startTime: 0,
-      maxResults,
-    })
-    return raw
-      .filter((it): it is RawHistoryItem & { url: string } => !!it.url)
-      .map((it) => ({
-        url: it.url,
-        title: it.title?.trim() || it.url,
-        lastVisit: typeof it.lastVisitTime === 'number' ? it.lastVisitTime : 0,
-      }))
-      .sort((a, b) => b.lastVisit - a.lastVisit)
-  } catch {
-    return []
-  }
+// 模块初始化即挂监听；newtab 页常驻，不会反复 register。
+// SSR / 非浏览器环境下 typeof window 兜底避免抛错。
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', flushSettingsSave)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushSettingsSave()
+  })
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { BookmarkCard, UserSettings } from '../types/bookmark'
@@ -91,7 +91,7 @@ const CARD_SIZE_STYLES: Record<
  *   - 已有备注 → 直接展示备注文本（最多 2 行），点击进入编辑
  *   - 无备注  → 展示低调的「+ 添加备注」占位按钮
  */
-export function BookmarkCardItem({
+function BookmarkCardItemImpl({
   card,
   draggable = true,
   searchMeta,
@@ -513,6 +513,37 @@ export function BookmarkCardItem({
 }
 
 /**
+ * v0.21.x：BookmarkCardItem 是渲染最频繁的叶子组件。整张网格通常 50+ 卡，
+ * store 任意更新（拖拽、设置滑块、最近使用记录）都会触发 BookmarkGrid 重渲染，
+ * 进而连带 N 张卡片全部 reconcile。这里用 React.memo + 自定义浅比较切断冒泡。
+ *
+ * - `card` 引用稳定：store 的 update/move 都走 `cards.map(c => c.id === id ? next : c)`，
+ *   未变更的 card 引用保持不变 → 直接 === 即可。
+ * - `searchMeta` 在搜索路径里由父组件内联构造（每次渲染都是新对象），
+ *   需要按字段浅比；非搜索路径恒为 undefined，快路径直接命中。
+ * - 内部读到的 store 状态（cardSize / isPageIndexed / actions）都通过
+ *   useBookmarkStore 选择器订阅，React.memo 不会拦截这部分订阅更新。
+ */
+function arePropsEqual(prev: Props, next: Props): boolean {
+  if (prev.card !== next.card) return false
+  if (prev.draggable !== next.draggable) return false
+  const a = prev.searchMeta
+  const b = next.searchMeta
+  if (a === b) return true
+  if (!a || !b) return false
+  if (a.categoryPath !== b.categoryPath) return false
+  if (a.dupCount !== b.dupCount) return false
+  // dupCategoryPaths 在搜索路径里也是每次渲染新数组；按内容比
+  if (a.dupCategoryPaths.length !== b.dupCategoryPaths.length) return false
+  for (let i = 0; i < a.dupCategoryPaths.length; i++) {
+    if (a.dupCategoryPaths[i] !== b.dupCategoryPaths[i]) return false
+  }
+  return true
+}
+
+export const BookmarkCardItem = memo(BookmarkCardItemImpl, arePropsEqual)
+
+/**
  * 搜索结果卡片底部的「分类来源」小标。
  * - 单一来源：📂 工作 / 收藏 / 导航
  * - 有副本：右侧追加「+N」徽标，title 列出所有副本分类，
@@ -667,7 +698,7 @@ export function CardIconView({
  * 不展示 hover 操作按钮 / 编辑态 / tag chips（拖拽中用不到，反而干扰）；
  * 保留最关键的"图标 + 标题 + 域名 + 备注"四件套。
  */
-export function CardDragPreview({ card }: { card: BookmarkCard }) {
+function CardDragPreviewImpl({ card }: { card: BookmarkCard }) {
   const cardSize = useBookmarkStore((s) => s.settings.cardSize)
   const size = CARD_SIZE_STYLES[cardSize ?? 'md'] ?? CARD_SIZE_STYLES.md
 
@@ -718,3 +749,5 @@ export function CardDragPreview({ card }: { card: BookmarkCard }) {
     </div>
   )
 }
+
+export const CardDragPreview = memo(CardDragPreviewImpl)

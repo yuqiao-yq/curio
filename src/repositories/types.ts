@@ -5,6 +5,7 @@ import type {
   SyncResult,
   UserSettings,
 } from '../types/bookmark'
+import type { BrowserHistoryItem, RecentEntry } from '../types/recent'
 
 /** 批量导入模式 */
 export type BulkImportMode = 'merge' | 'replace'
@@ -58,4 +59,35 @@ export interface BookmarkRepository {
 
   // ---------- 同步（V2 实现） ----------
   sync?(): Promise<SyncResult>
+}
+
+/**
+ * 「最近使用」存储抽象。
+ *
+ * 当前唯一实现是基于 browser.storage.local 的 LocalRecentRepository。
+ * 把它独立成接口的好处：
+ * - 与 BookmarkRepository 的写盘解耦（最近记录是行为日志，与书签数据语义不同）
+ * - 未来若要换到 IndexedDB / 云端同步，store 层无需改动
+ * - 测试中可以 mock 一份内存实现，避免污染 browser.storage
+ */
+export interface RecentRepository {
+  loadEntries(): Promise<RecentEntry[]>
+  saveEntries(entries: RecentEntry[]): Promise<void>
+  loadLimit(): Promise<number>
+  saveLimit(limit: number): Promise<void>
+}
+
+/**
+ * 浏览器原生历史只读适配。
+ *
+ * 我们不存储这些数据，只在用户开启「最近使用包含浏览器历史」时按需拉取。
+ * 抽成接口便于：
+ * - 在不支持 history API 的浏览器（含部分 Firefox 权限场景）下静默降级
+ * - 在测试中喂入固定的 fixture
+ */
+export interface BrowserHistoryRepository {
+  /** 拉取最近的浏览器历史；不可用时返回空数组而不是抛错 */
+  search(maxResults: number): Promise<BrowserHistoryItem[]>
+  /** best-effort 删除某条 url；不可用时静默忽略 */
+  deleteUrl(url: string): Promise<void>
 }

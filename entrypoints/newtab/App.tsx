@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { Suspense, lazy, useEffect } from 'react'
 import { useBookmarkStore } from '../../src/stores/useBookmarkStore'
 import { CategorySidebar } from '../../src/components/CategorySidebar'
 import { BookmarkGrid } from '../../src/components/BookmarkGrid'
@@ -8,14 +8,29 @@ import { ToastContainer } from '../../src/components/ToastContainer'
 import { DialogHost } from '../../src/components/Dialog'
 import { toast } from '../../src/stores/useToastStore'
 import { AIFAB } from '../../src/components/ai/AIFAB'
-import { AIPanel } from '../../src/components/ai/AIPanel'
-import { SecondaryPanelsHost } from '../../src/components/ai/SecondaryPanelsHost'
 import { useAIPanelStore } from '../../src/ai/panel/usePanelStore'
 import { useSecondaryPanelsStore } from '../../src/ai/panel/useSecondaryPanelsStore'
 import { useAISettingsStore } from '../../src/ai/useAISettingsStore'
 import { usePassiveSuggest } from '../../src/ai/services/usePassiveSuggest'
 import { useOrganizeStore } from '../../src/ai/services/useOrganizeStore'
 import { usePageIndex } from '../../src/ai/services/usePageIndex'
+
+/**
+ * v0.21.x：AI 浮窗与副浮窗按需加载。
+ * - 大头是 AIPanel 内部的 Chat/Settings/Labels/Organize 等 tab（合计 ~5k LOC）+
+ *   embedder/crawler/tagger/quality 等 service；这些首屏完全用不上
+ * - AIFAB 还是 eager，作为唯一入口必须立刻可见
+ * - 副浮窗只有用户曾把 tab 拽出主面板才显示，更适合 lazy
+ * - usePanelStore 仍 eager：Cmd+J 全局快捷键与 FAB 的 open/toggle 都从这里来
+ */
+const AIPanel = lazy(() =>
+  import('../../src/components/ai/AIPanel').then((m) => ({ default: m.AIPanel })),
+)
+const SecondaryPanelsHost = lazy(() =>
+  import('../../src/components/ai/SecondaryPanelsHost').then((m) => ({
+    default: m.SecondaryPanelsHost,
+  })),
+)
 
 export default function App() {
   const init = useBookmarkStore((s) => s.init)
@@ -40,6 +55,10 @@ export default function App() {
   const initSecondaryPanels = useSecondaryPanelsStore((s) => s.init)
   const setOrganizeRange = useOrganizeStore((s) => s.setRange)
   const refreshPageIndex = usePageIndex((s) => s.refresh)
+  // 用 visible/secondaryCount 作为 lazy 加载的门，只有用户真正打开过浮窗
+  // 才去拉 AIPanel chunk；上次会话留下的 visible=true 也能恢复显示
+  const panelVisible = useAIPanelStore((s) => s.visible)
+  const secondaryCount = useSecondaryPanelsStore((s) => s.panels.length)
 
   // 被动建议（§5.2）：FAB 红点 + 浮窗自动落到整理 Tab
   const { shouldShow: hasPassiveHint, dismiss: dismissPassive } =
@@ -200,9 +219,21 @@ export default function App() {
           void dismissPassive()
         }}
       />
-      <AIPanel />
-      {/* §7.3 副浮窗：分离出来的 tab 各自渲染为独立浮窗 */}
-      <SecondaryPanelsHost />
+      {/* v0.21.x：只有真正打开过浮窗才挂载（懒加载 chunk）。
+          AIPanel 内部 visible=false 时本来就 return null，
+          这里再用 panelVisible 做闸门，避免 Suspense 提前拉 chunk。 */}
+      {panelVisible && (
+        <Suspense fallback={null}>
+          <AIPanel />
+        </Suspense>
+      )}
+      {/* §7.3 副浮窗：仅在用户曾把 tab 拽出主面板时才有内容；
+          同样 lazy，避免没人用副浮窗的 100% 用户付出 bundle 成本 */}
+      {secondaryCount > 0 && (
+        <Suspense fallback={null}>
+          <SecondaryPanelsHost />
+        </Suspense>
+      )}
       <Topbar />
       <div className="flex-1 flex min-h-0">
         <CategorySidebar />

@@ -146,46 +146,69 @@ export function WebSearchBox() {
   const parsed = useMemo(() => parseQuery(raw), [raw])
 
   /**
-   * 把 raw 同步到 store.searchKeyword：
+   * 推导"按当前 raw 应写入 store 的值"。挑出来 useMemo 复用：
    * - web 模式：清掉，避免主区误切到本地搜索
    * - tag 模式：保留 `#xxx` 原文写入 store（让 BookmarkGrid 据此切换为 tag 筛选视图）
    * - ai 模式：保留 `@ai xxx` 原文写入 store（让 BookmarkGrid 走语义检索）
    * - local / auto：写入"去前缀"的 q（兼容历史行为）
    */
+  const derivedKeyword = useMemo(() => {
+    if (parsed.mode === 'web') return ''
+    if (parsed.mode === 'tag') return parsed.q ? `#${parsed.q}` : ''
+    if (parsed.mode === 'ai') return parsed.q ? `@ai ${parsed.q}` : ''
+    return parsed.q
+  }, [parsed])
+
+  /**
+   * v0.21.x debounce：每次按键都把 keyword 写进 store 会让 BookmarkGrid 整张表
+   * 重做 Map + 排序 + 重渲染；中文输入法的 composition 期会非常卡。
+   * 这里 180ms idle 后再写一次，让用户停止输入后再触发搜索。
+   *
+   * lastWrittenRef 记录最近一次"我们主动写进 store 的值"，用于：
+   *   1) 与 derived 比较，避免在 debounce 期间反复 clearTimeout/setTimeout
+   *   2) 让反向同步（下方 useEffect）区分外部源 vs 自己刚写入的回声 ——
+   *      没有它的话，debounce 期间 store 仍是旧值，反向同步会把 raw 抹掉，
+   *      造成用户输入被吞。
+   *
+   * 清空场景（按 ✕ / Esc）→ 立即 flush，否则用户看到的搜索结果会迟滞 180ms。
+   */
+  const lastWrittenRef = useRef<string>('')
   useEffect(() => {
-    if (parsed.mode === 'web') {
+    if (derivedKeyword === lastWrittenRef.current) return
+    if (derivedKeyword === '') {
+      lastWrittenRef.current = ''
       setSearchKeyword('')
-    } else if (parsed.mode === 'tag') {
-      setSearchKeyword(parsed.q ? `#${parsed.q}` : '')
-    } else if (parsed.mode === 'ai') {
-      setSearchKeyword(parsed.q ? `@ai ${parsed.q}` : '')
-    } else {
-      setSearchKeyword(parsed.q)
+      return
     }
-    // 组件卸载时清掉，避免下次 mount 残留
-    return () => setSearchKeyword('')
+    const t = setTimeout(() => {
+      lastWrittenRef.current = derivedKeyword
+      setSearchKeyword(derivedKeyword)
+    }, 180)
+    return () => clearTimeout(t)
+  }, [derivedKeyword, setSearchKeyword])
+
+  // 卸载时清掉 store keyword，避免下次 mount 残留
+  useEffect(() => {
+    return () => {
+      lastWrittenRef.current = ''
+      setSearchKeyword('')
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parsed.mode, parsed.q])
+  }, [])
 
   /**
    * 反向同步：外部源（卡片上 tag chip / 标签管理面板）通过
    * `setSearchKeyword('#xxx')` 触发筛选时，搜索框也要显示出 `#xxx`，
    * 否则用户看不到当前过滤条件、也无法清除。
    *
-   * 触发条件：storeKeyword 与本地推得的"应写入值"不一致时，把 storeKeyword
-   * 拷贝到 raw（这一步会再触发上面那个 useEffect，但二者最终一致后停止迭代）。
+   * 用 lastWrittenRef 区分：storeKeyword 不等于我们最近一次写入的值时，
+   * 说明是外部源动了，才把它拷回 raw。这样 debounce 期间不会被自己的回声打断。
    */
   useEffect(() => {
-    // 计算"按当前 raw 应写入 store 的值"
-    let derived = ''
-    if (parsed.mode === 'web') derived = ''
-    else if (parsed.mode === 'tag') derived = parsed.q ? `#${parsed.q}` : ''
-    else if (parsed.mode === 'ai') derived = parsed.q ? `@ai ${parsed.q}` : ''
-    else derived = parsed.q
-    if (storeKeyword !== derived) {
+    if (storeKeyword !== lastWrittenRef.current) {
+      lastWrittenRef.current = storeKeyword
       setRaw(storeKeyword)
     }
-    // 仅依赖 storeKeyword：raw 变化时另一个 useEffect 已经在维护一致性
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeKeyword])
 
