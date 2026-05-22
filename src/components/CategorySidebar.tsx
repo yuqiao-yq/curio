@@ -407,8 +407,8 @@ export function CategorySidebar() {
     <aside
       className={cn(
         'relative shrink-0 flex flex-col',
-        'border-r border-slate-200/70 dark:border-slate-700/70',
-        'bg-white/25 dark:bg-slate-950/20 backdrop-blur-sm',
+        'border-r border-white/30 dark:border-white/10',
+        'bg-white/10 dark:bg-slate-950/30 backdrop-blur-md',
         'overflow-hidden',
         // 拖拽中关闭过渡，避免跟手抖动；其他时机（折叠/展开/恢复默认）保留丝滑动画
         !resizing && 'transition-[width] duration-300 ease-in-out',

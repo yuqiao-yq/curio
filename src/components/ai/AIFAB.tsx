@@ -76,13 +76,16 @@ export function AIFAB({
       className={cn(
         'fixed z-[10080] inline-flex items-center justify-center rounded-full',
         'transition-all duration-200',
-        'shadow-lg',
+        'shadow-md shadow-brand/15 ring-1 ring-white/40 dark:ring-white/10',
+        'backdrop-blur-md',
         configured
-          ? 'bg-brand text-white hover:bg-brand-600 hover:scale-105'
+          ? cn(
+              'bg-white/70 text-brand dark:bg-slate-800/60',
+              'hover:bg-white/85 dark:hover:bg-slate-800/75 hover:scale-105',
+            )
           : cn(
-              'bg-slate-200 text-slate-500',
-              'dark:bg-slate-700 dark:text-slate-400',
-              'hover:bg-slate-300 dark:hover:bg-slate-600',
+              'bg-white/50 text-slate-400 dark:bg-slate-800/40 dark:text-slate-500',
+              'hover:bg-white/65 dark:hover:bg-slate-800/55',
             ),
         thinking && 'animate-pulse',
       )}
