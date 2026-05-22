@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import type { Category } from '../types/bookmark'
 import { useBookmarkStore } from '../stores/useBookmarkStore'
+import { IconView } from '../utils/icon'
 
 /**
  * 面包屑栏（常驻显示）
@@ -42,8 +43,16 @@ export function Breadcrumb() {
               <span className="text-slate-300 dark:text-slate-600 select-none">›</span>
             )}
             {isLast ? (
-              <span className="font-medium text-slate-700 dark:text-slate-200 truncate">
-                {cat.icon ? <span className="mr-1">{cat.icon}</span> : null}
+              <span className="font-medium text-slate-700 dark:text-slate-200 truncate inline-flex items-center">
+                {cat.icon ? (
+                  <IconView
+                    value={cat.icon}
+                    boxed
+                    boxClassName="w-5 h-5 mr-1"
+                    emojiClassName="text-xs leading-none"
+                    imgClassName="w-3.5 h-3.5 rounded-sm object-contain"
+                  />
+                ) : null}
                 {cat.name}
               </span>
             ) : (

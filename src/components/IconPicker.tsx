@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '../utils/cn'
 import { COMMON_EMOJIS, IconView, isImageIcon } from '../utils/icon'
+import { ImageCropDialog } from './ImageCropDialog'
+import { toast } from '../stores/useToastStore'
 
 type Tab = 'emoji' | 'url' | 'upload'
 
@@ -14,7 +16,7 @@ interface Props {
   trigger?: (open: () => void) => React.ReactNode
   /** 默认 emoji（用于"恢复默认"按钮的提示） */
   defaultEmoji?: string
-  /** 上传图片大小上限（KB），默认 100 */
+  /** 上传图片大小上限（KB），默认 2048（裁剪场景需允许高分辨率源图） */
   maxUploadKB?: number
   /** 弹层水平对齐策略，默认 left（弹层左边对齐触发器左边） */
   align?: 'left' | 'right'
@@ -41,7 +43,7 @@ export function IconPicker({
   onChange,
   trigger,
   defaultEmoji = '📁',
-  maxUploadKB = 100,
+  maxUploadKB = 2048,
   align = 'left',
 }: Props) {
   const [open, setOpen] = useState(false)
@@ -49,7 +51,8 @@ export function IconPicker({
     isImageIcon(value) ? 'url' : 'emoji',
   )
   const [urlDraft, setUrlDraft] = useState(isImageIcon(value) ? value! : '')
-  const [uploadError, setUploadError] = useState<string | null>(null)
+  // 上传后待裁剪的源图 dataURL；非空 = 裁剪框打开
+  const [cropSource, setCropSource] = useState<string | null>(null)
 
   // 弹层位置（fixed 坐标）
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
@@ -76,7 +79,6 @@ export function IconPicker({
     if (open) {
       setTab(isImageIcon(value) ? 'url' : 'emoji')
       setUrlDraft(isImageIcon(value) ? value! : '')
-      setUploadError(null)
     }
   }, [open, value])
 
@@ -128,19 +130,21 @@ export function IconPicker({
   }
 
   const handleUpload = (file: File) => {
-    setUploadError(null)
     if (!file.type.startsWith('image/')) {
-      setUploadError('请选择图片文件')
+      toast.error('请选择图片文件')
       return
     }
     const sizeKB = file.size / 1024
     if (sizeKB > maxUploadKB) {
-      setUploadError(`图片过大（${sizeKB.toFixed(0)}KB），上限 ${maxUploadKB}KB`)
+      toast.error(
+        '图片过大',
+        `${sizeKB.toFixed(0)}KB，上限 ${maxUploadKB}KB`,
+      )
       return
     }
     const reader = new FileReader()
-    reader.onload = () => pick(String(reader.result))
-    reader.onerror = () => setUploadError('读取失败')
+    reader.onload = () => setCropSource(String(reader.result))
+    reader.onerror = () => toast.error('读取失败')
     reader.readAsDataURL(file)
   }
 
@@ -300,12 +304,9 @@ export function IconPicker({
           >
             点击选择本地图片
             <div className="text-[10px] mt-1 opacity-60">
-              支持 PNG / JPG / SVG，建议 ≤ {maxUploadKB}KB
+              支持 PNG / JPG / SVG，上限 {maxUploadKB}KB；选好后可裁剪
             </div>
           </button>
-          {uploadError && (
-            <div className="text-xs text-red-500 px-1">{uploadError}</div>
-          )}
         </div>
       )}
     </div>,
@@ -338,6 +339,16 @@ export function IconPicker({
         )}
       </span>
       {popover}
+      {cropSource && (
+        <ImageCropDialog
+          source={cropSource}
+          onConfirm={(dataURL) => {
+            setCropSource(null)
+            pick(dataURL)
+          }}
+          onCancel={() => setCropSource(null)}
+        />
+      )}
     </>
   )
 }

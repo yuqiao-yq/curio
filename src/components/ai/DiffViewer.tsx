@@ -3,6 +3,7 @@ import type { OrganizePlan, PlanReview } from '../../ai/types'
 import { useBookmarkStore } from '../../stores/useBookmarkStore'
 import { useOrganizeStore } from '../../ai/services/useOrganizeStore'
 import { cn } from '../../utils/cn'
+import { IconView } from '../../utils/icon'
 
 /**
  * 整理建议 diff 视图
@@ -88,7 +89,12 @@ export function DiffViewer({
                   onToggle={() => toggleNewCategory(p.tempId)}
                   badge={
                     <span className="inline-flex items-center gap-1">
-                      <span className="text-base">{p.icon ?? '📁'}</span>
+                      <IconView
+                        value={p.icon}
+                        fallback="📁"
+                        emojiClassName="text-base leading-none"
+                        imgClassName="w-4 h-4 rounded-sm object-contain"
+                      />
                       <span className="font-medium">{p.name}</span>
                       <span className="text-[10px] text-slate-400 tabular-nums">
                         ({memberCount} 项)
@@ -206,7 +212,12 @@ export function DiffViewer({
                   onToggle={() => toggleDeletion(id)}
                   badge={
                     <span className="inline-flex items-center gap-1">
-                      <span className="text-base">{cat?.icon ?? '📁'}</span>
+                      <IconView
+                        value={cat?.icon}
+                        fallback="📁"
+                        emojiClassName="text-base leading-none"
+                        imgClassName="w-4 h-4 rounded-sm object-contain"
+                      />
                       <span className="font-medium line-through">
                         {cat?.name ?? '(未知)'}
                       </span>

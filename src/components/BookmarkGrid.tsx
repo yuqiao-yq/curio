@@ -25,6 +25,7 @@ import { VirtualBookmarkGrid } from './VirtualBookmarkGrid'
 import { RecentSection } from './RecentSection'
 import { promptDialog } from './Dialog'
 import { cn } from '../utils/cn'
+import { IconView } from '../utils/icon'
 
 /**
  * v0.21.x：@ai 语义搜索视图按需加载。
@@ -556,7 +557,14 @@ function CategorySection({
           >
             ▸
           </button>
-          <span className="text-base leading-none shrink-0">{category.icon ?? '📂'}</span>
+          <IconView
+            value={category.icon}
+            fallback="📂"
+            boxed
+            boxClassName="w-6 h-6"
+            emojiClassName="text-sm leading-none"
+            imgClassName="w-4 h-4 rounded-sm object-contain"
+          />
           <button
             onClick={() => setActive(category.id)}
             className="text-sm font-medium text-slate-700 dark:text-slate-200 hover:text-brand transition-colors truncate shrink-0"
@@ -610,13 +618,8 @@ function CategorySection({
               <div className="flex-1" />
             </>
           )}
-          <div
-            className={cn(
-              'border-t border-dashed border-slate-200 dark:border-slate-700 ml-2',
-              // description 已经占据了弹性宽度，没有时这里也要再有占位
-              category.description ? 'hidden' : 'flex-1',
-            )}
-          />
+          {/* 弹性占位：没有 description 时撑开，把 + 按钮推到右侧 */}
+          {!category.description && <div className="flex-1" />}
           <button
             onClick={handleAddCard}
             className="opacity-0 group-hover/sec:opacity-100 transition-opacity btn-ghost !p-1 h-6 w-6 text-sm shrink-0"
@@ -662,7 +665,6 @@ function CategorySection({
             {directCards.length > 0 && subFolders.length > 0 && ' · '}
             {subFolders.length > 0 && `${subFolders.length} 文件夹`}
           </span>
-          <div className="flex-1 border-t border-dashed border-slate-200 dark:border-slate-700 ml-2" />
         </header>
       )}
 

@@ -26,6 +26,14 @@ interface IconViewProps {
   className?: string
   /** title 提示 */
   title?: string
+  /**
+   * 是否给图标加一层圆角浅底框，统一 emoji 和图片图标的视觉语言。
+   * 在暖色背景上 emoji 对比度低，加底框能显著改善可读性，并和带方框的
+   * 自定义图片图标视觉权重一致。默认 false，不破坏老调用方。
+   */
+  boxed?: boolean
+  /** boxed=true 时的容器尺寸/额外样式，由调用方按字号选择（如 'w-5 h-5'） */
+  boxClassName?: string
 }
 
 /**
@@ -39,9 +47,41 @@ export function IconView({
   imgClassName = 'w-5 h-5 rounded-sm object-contain',
   className,
   title,
+  boxed = false,
+  boxClassName,
 }: IconViewProps) {
   const v = value?.trim()
-  if (isImageIcon(v)) {
+  const isImg = isImageIcon(v)
+
+  if (boxed) {
+    return (
+      <span
+        title={title}
+        className={cn(
+          'inline-flex items-center justify-center rounded-md shrink-0',
+          'bg-white/60 dark:bg-slate-700/50',
+          'ring-1 ring-black/5 dark:ring-white/5',
+          boxClassName,
+          className,
+        )}
+      >
+        {isImg ? (
+          <img
+            src={v}
+            alt=""
+            className={cn(imgClassName)}
+            onError={(e) => {
+              ;(e.currentTarget as HTMLImageElement).style.visibility = 'hidden'
+            }}
+          />
+        ) : (
+          <span className={cn(emojiClassName)}>{v || fallback}</span>
+        )}
+      </span>
+    )
+  }
+
+  if (isImg) {
     return (
       <img
         src={v}
