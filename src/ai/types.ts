@@ -172,9 +172,9 @@ export type OrganizeRange =
 export type OrganizeStyle = 'work' | 'study' | 'life' | 'free'
 
 export const ORGANIZE_STYLE_LABEL: Record<OrganizeStyle, string> = {
-  work: '工作主题为主（前端开发 / 设计资源 / 文档...）',
-  study: '学习主题为主（语言 / 算法 / 公开课...）',
-  life: '生活主题为主（购物 / 影视 / 美食...）',
+  work: '工作主题为主（前端开发 / 设计资源 / 文档…）',
+  study: '学习主题为主（语言 / 算法 / 公开课…）',
+  life: '生活主题为主（购物 / 影视 / 美食…）',
   free: '不指定，让 AI 自由发挥',
 }
 

@@ -327,7 +327,7 @@ export function ChatTab({ tabId }: { tabId: string }) {
               />
             ))}
             {streamingText !== null && (
-              <Bubble role="assistant" content={streamingText || '...'} streaming />
+              <Bubble role="assistant" content={streamingText || '…'} streaming />
             )}
           </>
         )}

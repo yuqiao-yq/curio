@@ -239,7 +239,7 @@ export default function App() {
         <CategorySidebar />
         <main className="flex-1 overflow-y-auto p-6">
           {!initialized ? (
-            <div className="text-center py-20 text-slate-400">加载中...</div>
+            <div className="text-center py-20 text-slate-400">加载中…</div>
           ) : topLevelCount === 0 ? (
             <EmptyState
               loading={loading}
@@ -309,7 +309,7 @@ function EmptyState({
       <p className="text-slate-500">选择一种方式开始整理你的书签</p>
       <div className="flex flex-col gap-3">
         <button onClick={onImport} disabled={loading} className="btn-primary py-3">
-          {loading ? '导入中...' : '从浏览器一键导入书签'}
+          {loading ? '导入中…' : '从浏览器一键导入书签'}
         </button>
         <button onClick={onCreate} className="btn-ghost py-3 border border-slate-200 dark:border-slate-700">
           创建空白分类
