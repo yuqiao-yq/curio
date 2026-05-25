@@ -133,13 +133,59 @@ function loadEngine(): Engine {
   }
 }
 
+const HISTORY_KEY = 'tabit:search-history'
+const HISTORY_MAX = 20
+
+function loadHistory(): string[] {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY)
+    if (!raw) return []
+    const arr = JSON.parse(raw)
+    if (!Array.isArray(arr)) return []
+    return arr.filter((s): s is string => typeof s === 'string').slice(0, HISTORY_MAX)
+  } catch {
+    return []
+  }
+}
+
+function saveHistory(list: string[]) {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, HISTORY_MAX)))
+  } catch {
+    /* localStorage 写失败（隐身模式等）不影响搜索本身，吞掉 */
+  }
+}
+
 export function WebSearchBox() {
   const [engine, setEngine] = useState<Engine>(() => loadEngine())
   const [raw, setRaw] = useState('')
   const [open, setOpen] = useState(false)
   const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
+  const [history, setHistory] = useState<string[]>(() => loadHistory())
   const wrapRef = useRef<HTMLDivElement | null>(null)
+
+  /** 把一次提交记入最近搜索：去重 + 置顶，超过 HISTORY_MAX 截断 */
+  const recordHistory = (q: string) => {
+    const v = q.trim()
+    if (!v) return
+    setHistory((prev) => {
+      const next = [v, ...prev.filter((s) => s !== v)].slice(0, HISTORY_MAX)
+      saveHistory(next)
+      return next
+    })
+  }
+  const removeHistory = (q: string) => {
+    setHistory((prev) => {
+      const next = prev.filter((s) => s !== q)
+      saveHistory(next)
+      return next
+    })
+  }
+  const clearHistory = () => {
+    saveHistory([])
+    setHistory([])
+  }
 
   /**
    * v0.21.19：默认收起态，只露引擎按钮 + "搜索"占位；
@@ -272,6 +318,9 @@ export function WebSearchBox() {
   const submit = () => {
     const { mode, q } = parsed
     if (!q) return
+    // 记录最近搜索：保留完整 raw（含 @web/@ai/#tag 前缀），
+    // 之后点回这条历史能完整还原模式
+    recordHistory(raw)
 
     if (mode === 'web') {
       goWebSearch(q)
@@ -351,6 +400,16 @@ export function WebSearchBox() {
                 : '智能'}
     </span>
   )
+
+  /**
+   * 历史下拉显示条件：
+   * - 输入框聚焦
+   * - 当前 raw 为空（用户清空了或还没输入）
+   * - 有历史
+   * - 引擎下拉未打开（同一位置同时只显示一个 popover）
+   */
+  const showHistory =
+    focused && raw.length === 0 && history.length > 0 && !open
 
   return (
     <div
@@ -479,6 +538,64 @@ export function WebSearchBox() {
                   : '打开'}
         </button>
       </div>
+
+      {/* 最近搜索下拉：聚焦且 raw 为空时显示
+          mousedown preventDefault 避免点击让 input 失焦，从而触发收起动画把列表"点空" */}
+      {showHistory && (
+        <div
+          onMouseDown={(e) => e.preventDefault()}
+          className={cn(
+            'absolute z-20 left-0 right-0 mt-1.5 py-1 rounded-lg max-h-[320px] overflow-y-auto',
+            'border border-slate-200 dark:border-slate-700',
+            'bg-white dark:bg-slate-800 shadow-lg',
+          )}
+        >
+          <div className="px-3 pt-1.5 pb-1 flex items-center justify-between text-[10px] uppercase tracking-wider text-slate-400">
+            <span>最近搜索</span>
+            <button
+              type="button"
+              onClick={clearHistory}
+              className="normal-case tracking-normal text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              title="清空全部历史"
+            >
+              清空
+            </button>
+          </div>
+          {history.map((q) => (
+            <div
+              key={q}
+              className={cn(
+                'group/hist flex items-center gap-1 px-2 text-sm',
+                'hover:bg-slate-100 dark:hover:bg-slate-700/60',
+                'text-slate-700 dark:text-slate-200',
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => setRaw(q)}
+                className="flex-1 min-w-0 flex items-center gap-2 px-1 py-1.5 text-left truncate"
+                title={`再次搜索：${q}`}
+              >
+                <span className="text-slate-400 shrink-0">⌕</span>
+                <span className="truncate">{q}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => removeHistory(q)}
+                className={cn(
+                  'shrink-0 opacity-0 group-hover/hist:opacity-100 transition-opacity',
+                  'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200',
+                  'px-1.5 h-6 text-xs',
+                )}
+                title="删除这条记录"
+                aria-label={`删除历史：${q}`}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* 引擎下拉列表 */}
       {open && (
