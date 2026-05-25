@@ -192,6 +192,51 @@ tab-it-export-YYYY-MM-DD.json
 > Embedding / 网页正文 / Tag 等本地索引（这些都在 IndexedDB 里，仅本机有效）。
 > 这条约束是有意为之 —— **apiKey 等敏感信息绝不进入分享文件**。
 
+### 3.5 跨设备同步
+
+数据管理弹窗底部「跨设备同步」section，在**同一浏览器账号**（Chrome / Edge 登录、
+Firefox Sync 启用）的多台设备间自动同步偏好和书签。基于 `chrome.storage.sync`，
+零成本、零依赖云服务。
+
+**开关一行字**：勾选「开启跨设备同步」即可。开启后会立即把本机的偏好 + 全部书签作为
+初始版本推到云端；其它已登录同一账号的设备打开 Tab It 后会自动拉取。
+
+**同步范围**：
+
+| 类别 | 同步 | 说明 |
+|---|---|---|
+| 偏好 | ✓ | theme · layout · language · cardSize · cardIconSize · cardGlass · fontColor · backgroundBlur · subSectionDefaultExpanded · recentIncludeBrowserHistory |
+| 全部分类 + 书签 | ✓ | 整包同步（manifest + 分块），单端最多约 80~100KB 可容纳 ~1000+ 卡片 |
+| 壁纸 | ✗ | 自定义壁纸体积可超 100KB 总配额 |
+| 侧栏宽度 | ✗ | 与屏幕分辨率相关，跨设备复用反而坏体验 |
+| AI 设置（含 apiKey） | ✗ | **隐私红线**：apiKey 永远只存本机 chrome.storage.local |
+| 最近使用、Embedding、网页正文、Tag 索引 | ✗ | 本机派生数据，不参与同步 |
+
+**状态卡片**显示：
+- **偏好** · 推送 / 拉取时间戳
+- **书签** · 推送 / 拉取时间戳
+- **云端容量进度条**（chrome.storage.sync 总上限 100KB）：
+  - <75% 品牌色 / 75-100% 黄色 / >100% 红色 + 拒写警告
+
+**三个手动操作**：
+- **↑ 立即推送**：把当前本机数据推到云端（默认有 800ms/1500ms 防抖，平时不需要手动点）
+- **↓ 从云端覆盖**：用云端最新版本**整包覆盖本机** —— 二次确认弹窗会明示
+  「整包覆盖意味着本机近期未推送上去的书签会丢失」
+- **✕ 清空云端**：移除云端 payload（本机不变）。常用于"换台新设备前清空旧数据"
+
+**冲突策略：整包 LWW（Last-Write-Wins）**：两台设备同时改时，**后保存的整包**会覆盖另一端
+未推送的内容。日常单设备使用没影响；如果有多设备同时编辑场景，建议改完一端等几秒
+（让它推上去）再去另一端动。
+
+**100KB 配额上限**：这是 `chrome.storage.sync` 的硬限制。书签量大的重度用户
+（粗略 ≥ 1000~1500 张含备注的卡片）会撞墙，新的书签推送会被拒写，UI 会变红警示。
+彻底解决要等 V2.0 的 Google Drive / Supabase 双轨方案。
+
+**Firefox 提示**：需先登录 Mozilla 账号并启用 Firefox Sync，且把"扩展"勾入同步范围。
+不支持时本 section 会显示「storage.sync 不可用（Firefox 需登录 Mozilla 账号）」。
+
+> 如果不想登录浏览器账号，仍可用 §3.3 / §3.4「JSON 导入导出」做更轻量的跨设备迁移。
+
 ---
 
 ## 4. 样式管理
@@ -806,6 +851,8 @@ tab-it-export-YYYY-MM-DD.json
 | AI 设置（含 apiKey） | `chrome.storage.local` 的 `tabit:ai-settings` | 同上 |
 | 浮窗几何 / Tab 列表 | `chrome.storage.local` 的 `tabit:ai-panel` | 同上 |
 | 副浮窗几何 | `chrome.storage.local` 的 `tabit:ai-secondary-panels` | 同上 |
+| 同步元数据（本机视角） | `chrome.storage.local` 的 `tabit:sync-meta` | 同上 |
+| **跨设备同步**（偏好白名单 + 书签 manifest/分块） | `chrome.storage.sync`（§3.5） | **100KB 总配额**，多设备共享 |
 | Embedding 向量库 | IndexedDB `tabit-embeddings` | 浏览器配额（GB 级） |
 | 网页正文索引 | IndexedDB `tabit-pages` | 同上 |
 | 当前选中的搜索引擎 | `localStorage` | 仅当前域 |

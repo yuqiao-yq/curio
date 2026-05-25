@@ -28,7 +28,8 @@
 | 拖拽 | **@dnd-kit** | 比 react-dnd 更现代、a11y 友好 |
 | 本地存储 | **chrome.storage.local + Dexie (IndexedDB)** | storage 存元数据，IndexedDB 存大数据（缩略图等） |
 | 浏览器 API | **chrome.bookmarks / chrome.storage / favicon** | 原生书签读取与图标获取 |
-| 跨浏览器同步（V2） | **Google Drive (appdata) + Supabase 双轨** | 免费用户用 Drive，Pro 用户用 Supabase 实时同步 |
+| 同浏览器多设备同步（V1.5 已交付） | **chrome.storage.sync** | 同一浏览器账号下零成本同步偏好 + 全部书签（manifest + 分块） |
+| 跨浏览器同步（V2 规划） | **Google Drive (appdata) + Supabase 双轨** | 突破 100KB 配额；免费用户走 Drive，Pro 走 Supabase 实时同步 |
 | 跨浏览器兼容 | **webextension-polyfill** | 抹平 chrome.* 与 browser.* 差异 |
 
 ---
@@ -73,8 +74,9 @@
 | Background | `entrypoints/background.ts` | Service Worker，监听书签变化 |
 | Popup（可选） | `entrypoints/popup/` | 点扩展图标的快捷面板 |
 | Options（可选） | `entrypoints/options/` | 完整设置页 |
-| 数据层 | `src/repositories/` | Repository 模式，封装存储 |
-| 业务层 | `src/services/` | 书签同步、搜索、导入导出 |
+| 数据层 | `src/repositories/` | Repository 模式，封装本地存储（chrome.storage.local + Dexie） |
+| 同步层 | `src/services/SyncService.ts` | V1.5 跨设备同步：偏好白名单 + 书签 manifest/分块，整包 LWW |
+| 业务层 | `src/services/` | 搜索、导入导出、网页抓取（AI）、整理质检 等 |
 | UI 层 | `src/components/` | 通用组件 |
 | 状态 | `src/stores/` | Zustand stores |
 
@@ -157,22 +159,69 @@ interface BookmarkRepository {
 ```
 
 **实现类：**
-- `LocalRepository`：基于 chrome.storage.local + Dexie（V1）
-- `DriveRepository`：基于 Google Drive appdata（V2）
-- `SupabaseRepository`：基于 Supabase（V2）
+- `LocalRepository`：基于 chrome.storage.local + Dexie（V1，已交付）
+- `DriveRepository`：基于 Google Drive appdata（V2，规划中）
+- `SupabaseRepository`：基于 Supabase（V2，规划中）
 
 业务层通过依赖注入获取 Repository，**切换实现不影响 UI**。
 
+> **V1.5 同步层与 Repository 的关系**：V1.5 跨设备同步走的是独立的
+> `SyncService`（见 §6），它把本地 Repository 当作真相源，定时把白名单字段 / 整包书签
+> 序列化推到 `chrome.storage.sync`；远端变更触发时再通过
+> `applyRemoteSettings` / `applyRemoteBookmarks` 回灌到本地 Repository。
+> Repository 接口本身没新增方法 —— 这是个旁路设计，避免给 V2 真正的云端
+> Repository 方案污染抽象层。
+
 ---
 
-## 6. 跨浏览器同步策略
+## 6. 同步策略
 
-### V1（MVP）：本地 + 导入导出
-- 数据全部存 `chrome.storage.local`
+### V1（MVP）：本地 + 导入导出（已交付）
+- 数据全部存 `chrome.storage.local` + Dexie（缩略图等大对象）
 - 提供 JSON 导入导出，作为跨浏览器迁移的兜底方案
-- `chrome.storage.sync` 同步**轻量配置**（主题、布局等 < 100KB）
 
-### V2：云端同步双轨
+### V1.5：同浏览器多设备自动同步（已交付）
+
+> 适用场景：同一 Chrome / Edge 账号、或 Firefox Sync 开启的多台设备之间。
+> 不解决跨浏览器问题（Chrome ↔ Firefox 没有共享存储），那留给 V2。
+
+**两条独立管线，都跑在 `chrome.storage.sync` 上：**
+
+1. **偏好管线**（`KEY_SETTINGS_PAYLOAD`，1 个 item，< 1KB）
+   - 白名单字段（`SYNCABLE_SETTINGS_KEYS`）：`theme / layout / language / cardSize /
+     cardIconSize / cardGlass / fontColor / backgroundBlur /
+     subSectionDefaultExpanded / recentIncludeBrowserHistory`
+   - **黑名单**：壁纸（可超配额）、侧栏宽度（设备相关）、`browserSync*`（本机偏好）、
+     **AI 设置含 apiKey（隐私红线）**
+2. **书签管线**（`KEY_BM_MANIFEST` + N 个 `KEY_BM_CHUNK_PREFIX{i}`）
+   - 整包 categories + cards 序列化后按 8KB 切片，分块写入 +
+     一份 manifest 描述总块数 / 字节数 / `updatedAt`
+   - 所有块和 manifest 在**同一次 `storage.sync.set`** 里原子提交
+   - 推送时若新版本块数少于旧版，会清理多余的 stale chunks
+
+**关键不变量：**
+- **配额 100KB 硬上限**：客户端预检 + UI 容量进度条（>75% 黄 / >100% 红），超额 push
+  直接拒写并把 `quotaHint` 冒泡到 `meta.lastError`
+- **整包 LWW 冲突策略**：两端同时改 → 后写者覆盖先写者。已在 UI 文案明示
+  "整包覆盖意味着本机近期未推送上去的书签会丢失"
+- **自回声防抖**：每条管线独立维护 `lastPushTs`，`storage.onChanged` 触发时
+  比对 `remoteUpdatedAt <= lastPushTs` 直接跳过，避免推完又被自己的 echo 拉回来
+- **推送 debounce**：偏好 800ms / 书签 1500ms，叠加 `beforeunload` /
+  `visibilitychange` 强制 flush
+- **拉取前取消挂起的 push**：`pullBookmarksForce` / `pullSettingsForce` 调用前
+  必须先 `cancelPendingSyncPush`，否则正在挂起的本地新值会抢先飞上云端把"覆盖"做空
+
+**Meta 数据结构**（存 `chrome.storage.local`，本机视角）：
+```ts
+interface SyncMeta {
+  enabled: boolean
+  settings: { lastPushTs?, lastPullTs?, lastSizeBytes? }
+  bookmarks: { lastPushTs?, lastPullTs?, lastSizeBytes? }
+  lastError?: string   // 显示在 UI 红字
+}
+```
+
+### V2：云端同步双轨（规划中）
 | 套餐 | 存储 | 用户成本 | 我方成本 |
 |------|------|---------|---------|
 | Free | Google Drive (appdata) | 0 | 0 |
@@ -183,9 +232,10 @@ interface BookmarkRepository {
 2. 付费用户走 Supabase，**收入覆盖成本**
 3. Repository 抽象，业务代码完全不感知底层差异
 
-### 冲突解决
-- **Last-Write-Wins**（按 `updatedAt` 时间戳，简单粗暴）
-- 进阶：CRDT（V3 再考虑）
+### 冲突解决演进
+- V1.5：**整包 LWW**（一次写整个 categories+cards，后写覆盖先写）
+- V2：升级到 **row-level LWW**（按 entity.updatedAt 合并，丢失面减小）
+- V3+：CRDT（再考虑）
 
 ---
 
