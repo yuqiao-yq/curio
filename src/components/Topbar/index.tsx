@@ -320,6 +320,7 @@ export function Topbar() {
       {dataDialogOpen &&
         createPortal(
           <DataDialog
+            settings={settings}
             onClose={() => setDataDialogOpen(false)}
             onImportFromBrowser={runAndCloseData(handleImportFromBrowser)}
             onExportToBrowser={runAndCloseData(() => {

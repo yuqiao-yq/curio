@@ -1,5 +1,15 @@
 import { Suspense, lazy, useEffect } from 'react'
+import { browser } from 'wxt/browser'
 import { useBookmarkStore } from '../../src/stores/useBookmarkStore'
+import {
+  bootstrapSync,
+  handleSettingsRemoteChange,
+  handleBookmarksRemoteChange,
+  KEY_SETTINGS_PAYLOAD,
+  KEY_BM_MANIFEST,
+  type SettingsPayload,
+  type BookmarksManifest,
+} from '../../src/services/SyncService'
 import { CategorySidebar } from '../../src/components/CategorySidebar'
 import { BookmarkGrid } from '../../src/components/BookmarkGrid'
 import { Breadcrumb } from '../../src/components/Breadcrumb'
@@ -97,6 +107,69 @@ export default function App() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [clampPanelToViewport])
+
+  // ─── V1.5：跨设备同步（chrome.storage.sync） ──────
+  // - 初始化完成后跑一次 bootstrap：两条管线（settings + bookmarks）独立拉齐
+  // - 同时挂 storage.onChanged 监听，远端变更时实时应用到本机
+  //   （各自带自回声防抖；本机刚推的 ts <= lastPushTs 会被忽略）
+  useEffect(() => {
+    if (!initialized) return
+    const storageApi = browser?.storage as {
+      sync?: unknown
+      onChanged?: { addListener: (cb: (...args: unknown[]) => void) => void; removeListener: (cb: (...args: unknown[]) => void) => void }
+    } | undefined
+    let cancelled = false
+    // 1) bootstrap：把远端 / 本机的差异在启动时拉齐（settings + bookmarks）
+    void (async () => {
+      const s = useBookmarkStore.getState()
+      const r = await bootstrapSync(s.settings, s.categories, s.cards)
+      if (cancelled) return
+      if (r.appliedSettings && Object.keys(r.appliedSettings).length > 0) {
+        await useBookmarkStore.getState().applyRemoteSettings(r.appliedSettings)
+      }
+      if (r.appliedBookmarks) {
+        await useBookmarkStore.getState().applyRemoteBookmarks(r.appliedBookmarks)
+      }
+      // 引导期错误不阻断启动；用日志暴露给开发者，UI 会从 meta.lastError 拿到
+      if (r.warnings && r.warnings.length > 0) {
+        console.warn('[sync] bootstrap warnings:', r.warnings)
+      }
+    })()
+
+    // 2) onChanged 监听：两条远端键都要看
+    if (!storageApi?.onChanged) return
+    const listener = (changes: Record<string, { newValue?: unknown; oldValue?: unknown }>, areaName: string) => {
+      if (areaName !== 'sync') return
+      // settings payload 变更
+      const chSettings = changes[KEY_SETTINGS_PAYLOAD]
+      if (chSettings) {
+        void (async () => {
+          const payload = (chSettings.newValue ?? null) as SettingsPayload | null
+          const { applied } = await handleSettingsRemoteChange(payload)
+          if (applied && Object.keys(applied).length > 0) {
+            await useBookmarkStore.getState().applyRemoteSettings(applied)
+          }
+        })()
+      }
+      // bookmarks manifest 变更 → 触发整包重拉
+      // 只看 manifest 即可：所有 chunk + manifest 是同 set 写入的原子提交
+      const chManifest = changes[KEY_BM_MANIFEST]
+      if (chManifest) {
+        void (async () => {
+          const manifest = (chManifest.newValue ?? null) as BookmarksManifest | null
+          const { payload } = await handleBookmarksRemoteChange(manifest)
+          if (payload) {
+            await useBookmarkStore.getState().applyRemoteBookmarks(payload)
+          }
+        })()
+      }
+    }
+    storageApi.onChanged.addListener(listener as never)
+    return () => {
+      cancelled = true
+      storageApi.onChanged?.removeListener(listener as never)
+    }
+  }, [initialized])
 
   // ─── 主题（明亮 / 黑暗 / 跟随系统） ────────────────
   // Tailwind darkMode='class' → 通过 html.dark 控制

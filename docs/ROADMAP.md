@@ -5,6 +5,8 @@
 > 子阶段编号，与本路线图的 V 编号是两套体系，互不冲突）。
 >
 > 当前实际进展见 [version history](#当前进度速览-202605)。
+>
+> **进度速记**：V1.0 ✅、V1.5 ✅、V2.0 未开始、V3.0/AI 12/14 已交付。
 
 ---
 
@@ -34,36 +36,51 @@
 - [x] 浏览器工具栏 popup「添加当前页面」（v0.5+；v0.12+ 含 AI 建议 ✨）
 - [x] 「最近使用」模块（含可选合并浏览器历史）
 - [ ] 多布局切换（grid / list）
-- [ ] 卡片大小调节
+- [x] 卡片大小调节
 - [ ] 拖入链接快速添加
 - [x] Firefox 兼容（已用 wxt MV2 适配；尚未上 AMO）
 
 ---
 
-## V1.5 - 跨设备配置同步
+## ✅ V1.5 - 同浏览器多设备同步（chrome.storage.sync）
 
-**目标**：用 `chrome.storage.sync` 同步轻量配置（不含书签数据本身）。
-**状态**：未开始
+**目标**：在同一浏览器账号（Chrome / Edge sign-in、Firefox Sync）下，
+打开了浏览器同步的多台设备间自动同步偏好与全部书签数据。
+**状态**：已交付 ✓
 
-- [ ] 配置项（主题、布局、壁纸偏好）通过 storage.sync 跨设备同步
-- [ ] 同步状态指示器
-- [ ] 数据迁移工具（local → 云）
+### 已实现
+- [x] 同步开关 + 状态卡片（数据管理弹窗内）
+- [x] 偏好同步（白名单：theme / layout / language / cardSize / cardIconSize / cardGlass / fontColor / backgroundBlur / subSectionDefaultExpanded / recentIncludeBrowserHistory）
+- [x] 书签数据同步（分类 + 卡片整包）：manifest + N chunks 原子写入
+- [x] 客户端配额预检 + 容量进度条（黄/红预警，超 100KB 拒写）
+- [x] storage.onChanged 实时双向同步 + 自回声防抖（lastPushTs 守门）
+- [x] 推 / 拉 / 整包覆盖 / 清空云端 四种手动操作
+- [x] 整包 LWW 冲突策略 + 覆盖前 danger confirm 文案提示丢数据风险
+- [x] Push debounce（偏好 800ms / 书签 1500ms）+ beforeunload/visibilitychange flush
+- [x] 启动 bootstrap：两条管线独立 LWW 拉齐
 
-> 一种更轻量的"同步"已经存在：手动「导出 / 导入 JSON」（§3.2 / §3.3），
-> 适合不想绑定云账号的用户。
+### 范围限制（设计取舍，不算 bug）
+- **不同步**：壁纸（体积可超配额）、侧栏宽度（与屏宽相关）、browserSync* 字段、AI 设置（含 apiKey，红线）
+- **整包 LWW**：两端同时改时后写覆盖先写，未推送的本地修改会丢失（UI 已警示）
+- **配额 100KB 硬上限**：书签量大的重度用户会撞墙 → 由 V2.0 接管
+
+> 一种更轻量的"同步"始终保留：手动「导出 / 导入 JSON」（§3.3 / §3.4），
+> 适合不想登录浏览器账号的用户。
 
 ---
 
-## V2.0 - 跨浏览器云同步（书签数据本身）
+## V2.0 - 跨浏览器云同步 / 突破 100KB 配额
 
-**目标**：实现 Chrome ↔ Edge ↔ Firefox 真正的数据互通。
+**目标**：解决 V1.5 的两大限制：
+1. 跨浏览器互通（Chrome ↔ Firefox 没有共享的 storage.sync）
+2. 书签量超过 chrome.storage.sync 100KB 配额时的容灾出口
 **状态**：未开始
 
 ### Free 套餐 - Google Drive
 - [ ] OAuth 登录（chrome.identity / launchWebAuthFlow）
-- [ ] DriveRepository 实现
-- [ ] appdata folder 隐藏存储
-- [ ] 增量同步 + 冲突合并（LWW 策略）
+- [ ] DriveRepository 实现（复用 V1.5 已定义的 SyncProvider 接口）
+- [ ] appdata folder 隐藏存储（无 100KB 限制）
+- [ ] 增量同步 + 冲突合并（升级到 row-level LWW，按 entity.updatedAt）
 - [ ] 离线编辑队列
 
 ### Pro 套餐 - Supabase
@@ -74,8 +91,9 @@
 - [ ] 订阅管理（Stripe）
 
 ### 通用
-- [ ] 同步冲突 UI 提示
+- [ ] 同步冲突 UI 提示（取代 V1.5 的"后写覆盖"）
 - [ ] 同步历史与版本回滚
+- [ ] V1.5 ↔ V2.0 迁移：超出 100KB 时自动引导用户切换到 Drive
 
 ---
 
@@ -116,6 +134,8 @@
 ## 当前进度速览（2026-05）
 
 ```
+v0.21.x  feat V1.5 跨设备同步（settings + bookmarks 整包 LWW，chrome.storage.sync）
+v0.21.x  refactor 大文件按职责拆分 + 卡片尺寸三档 + 背景毛玻璃 / 卡片毛玻璃开关 + AI 搜索网格 + 虚拟滚动
 v0.20.0  feat §7.3 多浮窗（分离 tab 到独立可拖动浮窗）
 v0.19.0  feat §7.4 相关阅读推荐
 v0.18.0  feat §6.4 整理质检（重复 / 失效 / 长期未访问）

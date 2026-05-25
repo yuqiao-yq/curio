@@ -15,6 +15,12 @@ import {
   type ExportOptions,
   type ExportResult,
 } from '../../services/bookmarkExporter'
+import {
+  getMeta as getSyncMeta,
+  pushSettings as syncPushSettings,
+  pushBookmarks as syncPushBookmarks,
+  syncableChanged,
+} from '../../services/SyncService'
 
 import { collectDescendantIds, groupBy, normalizeTags } from './helpers'
 
@@ -157,6 +163,22 @@ interface BookmarkState {
 
   /** 局部更新用户设置（自动持久化） */
   updateSettings: (patch: Partial<UserSettings>) => Promise<void>
+  /**
+   * 把来自云端的可同步字段应用到本机。
+   * 与 updateSettings 的差别：不会再触发 sync push（避免回声），
+   * 也不会重复落 chrome.storage.local（应用本地持久化由 scheduleSettingsSave 兜底）。
+   */
+  applyRemoteSettings: (patch: Partial<UserSettings>) => Promise<void>
+  /**
+   * 把来自云端的整套书签 payload 应用到本机（整包 LWW）。
+   * - 不会回推（避免回声）
+   * - 用 repo.bulkImport(mode='replace') 同时落盘，保证重启后看到的就是云端版本
+   * - settings 不受影响（settings 走另一条管线）
+   */
+  applyRemoteBookmarks: (payload: {
+    categories: Category[]
+    cards: BookmarkCard[]
+  }) => Promise<void>
 }
 
 export const useBookmarkStore = create<BookmarkState>((set, get) => ({
@@ -280,6 +302,9 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
       if (cardsToAdd.length > 0) await repo.saveCards(cardsToAdd)
 
       await get().init()
+      if (catsToCreate.length > 0 || cardsToAdd.length > 0) {
+        scheduleBookmarksSyncPush()
+      }
       return {
         categoriesAdded: catsToCreate.length,
         cardsAdded: cardsToAdd.length,
@@ -323,6 +348,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     if (cardsToSave.length > 0) await repo.saveCards(cardsToSave)
     if (catsToSave.length > 0 || cardsToSave.length > 0) {
       set({ categories: nextCats, cards: nextCards })
+      scheduleBookmarksSyncPush()
     }
 
     // 记忆用户偏好（下次默认沿用），不阻塞同步结果返回
@@ -368,6 +394,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
       categories: [...get().categories, cat],
       activeCategoryId: get().activeCategoryId ?? cat.id,
     })
+    scheduleBookmarksSyncPush()
     return cat
   },
 
@@ -385,6 +412,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     set({
       categories: get().categories.map((c) => (c.id === id ? updated : c)),
     })
+    scheduleBookmarksSyncPush()
   },
 
   async removeCategory(id) {
@@ -422,6 +450,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
         ? remaining[0]?.id ?? null
         : get().activeCategoryId,
     })
+    scheduleBookmarksSyncPush()
   },
 
   async reorderCategories(orderedIds) {
@@ -436,6 +465,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     // 批量写入，避免并发"读-改-写"竞态
     await getRepository().saveCategories(reordered)
     set({ categories: reordered })
+    scheduleBookmarksSyncPush()
   },
 
   async reorderSiblings(parentId, orderedIds) {
@@ -454,6 +484,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
       await getRepository().saveCategories(updated)
     }
     set({ categories: next })
+    if (updated.length > 0) scheduleBookmarksSyncPush()
   },
 
   async moveCategory(activeId, targetParentId, targetIndex) {
@@ -513,6 +544,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     set({
       categories: allCats.map((c) => updateMap.get(c.id) ?? c),
     })
+    if (toSave.length > 0) scheduleBookmarksSyncPush()
   },
 
   async addCard({ categoryId, title, url, description, tags, icon }) {
@@ -538,6 +570,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     }
     await getRepository().saveCard(card)
     set({ cards: [...get().cards, card] })
+    scheduleBookmarksSyncPush()
     return card
   },
 
@@ -547,6 +580,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     const updated = { ...card, ...patch, updatedAt: Date.now() }
     await getRepository().saveCard(updated)
     set({ cards: get().cards.map((c) => (c.id === id ? updated : c)) })
+    scheduleBookmarksSyncPush()
   },
 
   async setCardTags(cardId, tags) {
@@ -578,6 +612,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     set({
       cards: get().cards.map((c) => cardMap.get(c.id) ?? c),
     })
+    scheduleBookmarksSyncPush()
   },
 
   async renameTag(oldTag, newTag) {
@@ -597,6 +632,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     })
     if (toSave.length > 0) await getRepository().saveCards(toSave)
     set({ cards: nextCards })
+    if (toSave.length > 0) scheduleBookmarksSyncPush()
   },
 
   async mergeTags(tagsToMerge, target) {
@@ -618,6 +654,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     })
     if (toSave.length > 0) await getRepository().saveCards(toSave)
     set({ cards: nextCards })
+    if (toSave.length > 0) scheduleBookmarksSyncPush()
   },
 
   async removeTag(tag) {
@@ -638,6 +675,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     })
     if (toSave.length > 0) await getRepository().saveCards(toSave)
     set({ cards: nextCards })
+    if (toSave.length > 0) scheduleBookmarksSyncPush()
   },
 
   async removeCard(id) {
@@ -650,6 +688,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
       cards: get().cards.filter((c) => c.id !== id),
       recentEntries: nextRecent,
     })
+    scheduleBookmarksSyncPush()
   },
 
   async moveCard(cardId, targetCategoryId, targetIndex) {
@@ -682,6 +721,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     // 卡片视觉先回原位再过渡到新位置 → 用户看到闪烁抖动。
     set({ cards })
     await getRepository().saveCards(cards)
+    scheduleBookmarksSyncPush()
   },
 
   async reorderCardsInCategory(categoryId, orderedIds) {
@@ -697,6 +737,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     await getRepository().saveCards(
       cards.filter((c) => c.categoryId === categoryId)
     )
+    scheduleBookmarksSyncPush()
   },
 
   async recordRecentOpen(cardId) {
@@ -767,6 +808,13 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     // unload 路径由模块级 beforeunload/visibilitychange 监听兜底 flush。
     scheduleSettingsSave()
 
+    // V1.5：可同步字段发生变化时，再 debounce 一次推送到云端
+    // - 不可同步字段（壁纸、侧边栏宽度、browserSync*）不会触发推送
+    // - 自身节流到 800ms（比 local 慢，云端 quota 更紧：120 ops/min）
+    if (syncableChanged(prev, next)) {
+      scheduleSettingsSyncPush()
+    }
+
     // ─── 副作用：开关切换时同步处理 browserHistoryItems ───
     const prevOn = !!prev.recentIncludeBrowserHistory
     const nextOn = !!next.recentIncludeBrowserHistory
@@ -776,6 +824,59 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     } else if (prevOn && !nextOn) {
       // 开 → 关：清空内存，避免历史数据残留
       set({ browserHistoryItems: [] })
+    }
+  },
+
+  async applyRemoteSettings(patch) {
+    const prev = get().settings
+    const next: UserSettings = { ...prev, ...patch }
+    set({ settings: next })
+    // 仍要落本地，让重启后从 local 读到最新值；走 scheduleSettingsSave
+    // 而不是即时写，是为了把多个 onChanged 合批。
+    scheduleSettingsSave()
+    // 注意：故意 不 调 scheduleSettingsSyncPush，避免回声循环。
+    // 副作用：开关切换时同步处理 browserHistoryItems（与 updateSettings 一致）
+    const prevOn = !!prev.recentIncludeBrowserHistory
+    const nextOn = !!next.recentIncludeBrowserHistory
+    if (!prevOn && nextOn) {
+      await get().loadBrowserHistory()
+    } else if (prevOn && !nextOn) {
+      set({ browserHistoryItems: [] })
+    }
+  },
+
+  async applyRemoteBookmarks(payload) {
+    // 内存先替换，UI 立刻刷新；不触发 push 回声
+    set({ categories: payload.categories, cards: payload.cards })
+    // 持久化到本地仓库：mode='replace' 会原子清空+重写 categories & cards，
+    // 不动 settings（与本管线职责一致）
+    try {
+      await getRepository().bulkImport(
+        {
+          version: 'sync',
+          exportedAt: Date.now(),
+          categories: payload.categories,
+          cards: payload.cards,
+        },
+        'replace',
+      )
+    } catch (err) {
+      // 落盘失败不致命：内存已是新版，下次启动会因为 manifest.ts > lastPullTs
+      // 而被 bootstrap 重新拉取，幂等。
+      console.error('[sync] applyRemoteBookmarks 持久化失败：', err)
+    }
+    // 同步清理"最近使用"中指向已不存在卡片的脏记录
+    const validIds = new Set(payload.cards.map((c) => c.id))
+    const nextRecent = get().recentEntries.filter((e) => validIds.has(e.cardId))
+    if (nextRecent.length !== get().recentEntries.length) {
+      set({ recentEntries: nextRecent })
+      void getRecentRepository().saveEntries(nextRecent)
+    }
+    // 激活分类被远端删了 → 落到第一个顶层分类
+    const activeId = get().activeCategoryId
+    if (activeId && !payload.categories.some((c) => c.id === activeId)) {
+      const firstTop = payload.categories.find((c) => !c.parentId)
+      set({ activeCategoryId: firstTop?.id ?? payload.categories[0]?.id ?? null })
     }
   },
 }))
@@ -806,11 +907,109 @@ function flushSettingsSave() {
   void getRepository().saveSettings(useBookmarkStore.getState().settings)
 }
 
+/* ──────────────────────────────────────────────────────────────────────
+ * 同步推送 debounce（V1.5）—— 两条独立管线：
+ *   - settings：800ms（用户调样式滑块是高频低字节）
+ *   - bookmarks：1500ms（拖拽/批量编辑的"一阵子操作"应合并成一次推送，
+ *     字节数大、写入贵，多等一会儿值得）
+ *
+ * chrome.storage.sync 配额：120 writes / 分钟 + 1800 writes / 小时；
+ * 两条管线 + 各自 debounce 是双层保护。
+ * pushSettings / pushBookmarks 内部都会自检 meta.enabled，
+ * 未启用时为空操作不浪费请求。
+ * ────────────────────────────────────────────────────────────────────── */
+let settingsSyncPushTimer: ReturnType<typeof setTimeout> | null = null
+let bookmarksSyncPushTimer: ReturnType<typeof setTimeout> | null = null
+const SETTINGS_SYNC_PUSH_DEBOUNCE_MS = 800
+const BOOKMARKS_SYNC_PUSH_DEBOUNCE_MS = 1500
+
+function scheduleSettingsSyncPush() {
+  if (settingsSyncPushTimer) clearTimeout(settingsSyncPushTimer)
+  settingsSyncPushTimer = setTimeout(() => {
+    settingsSyncPushTimer = null
+    void syncPushSettings(useBookmarkStore.getState().settings)
+  }, SETTINGS_SYNC_PUSH_DEBOUNCE_MS)
+}
+
+function flushSettingsSyncPush() {
+  if (!settingsSyncPushTimer) return
+  clearTimeout(settingsSyncPushTimer)
+  settingsSyncPushTimer = null
+  void syncPushSettings(useBookmarkStore.getState().settings)
+}
+
+function scheduleBookmarksSyncPush() {
+  if (bookmarksSyncPushTimer) clearTimeout(bookmarksSyncPushTimer)
+  bookmarksSyncPushTimer = setTimeout(() => {
+    bookmarksSyncPushTimer = null
+    const s = useBookmarkStore.getState()
+    void syncPushBookmarks(s.categories, s.cards)
+  }, BOOKMARKS_SYNC_PUSH_DEBOUNCE_MS)
+}
+
+function flushBookmarksSyncPush() {
+  if (!bookmarksSyncPushTimer) return
+  clearTimeout(bookmarksSyncPushTimer)
+  bookmarksSyncPushTimer = null
+  const s = useBookmarkStore.getState()
+  void syncPushBookmarks(s.categories, s.cards)
+}
+
 // 模块初始化即挂监听；newtab 页常驻，不会反复 register。
 // SSR / 非浏览器环境下 typeof window 兜底避免抛错。
 if (typeof window !== 'undefined') {
-  window.addEventListener('beforeunload', flushSettingsSave)
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') flushSettingsSave()
+  window.addEventListener('beforeunload', () => {
+    flushSettingsSave()
+    flushSettingsSyncPush()
+    flushBookmarksSyncPush()
   })
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      flushSettingsSave()
+      flushSettingsSyncPush()
+      flushBookmarksSyncPush()
+    }
+  })
+}
+
+/** 暴露给外部按需主动 flush 两条推送管线 */
+export function flushPendingSyncPush() {
+  flushSettingsSyncPush()
+  flushBookmarksSyncPush()
+}
+
+/**
+ * 取消两条挂起的推送（不写云端）。
+ * 「从云端覆盖」前要先调一下，避免：用户刚改了本地 → 还没到 debounce → 点拉取，
+ * 在 readRemote 的 await 间隙里 push 触发，把刚改的本地值推上去，
+ * 紧接着 pull 拿回来一看『云端 = 本地新值』，覆盖看起来没生效。
+ */
+export function cancelPendingSyncPush() {
+  if (settingsSyncPushTimer) {
+    clearTimeout(settingsSyncPushTimer)
+    settingsSyncPushTimer = null
+  }
+  if (bookmarksSyncPushTimer) {
+    clearTimeout(bookmarksSyncPushTimer)
+    bookmarksSyncPushTimer = null
+  }
+}
+
+/**
+ * 暴露给所有产生 categories/cards 变更的外部入口（如 importFromBrowser、
+ * AI organize、批量打标签 setCardTagsBatch / renameTag / mergeTags / removeTag、
+ * exportToBrowser 回写 bookmarkId 等）。
+ *
+ * 内部 store 里的简单 CRUD（addCategory/updateCategory/removeCategory(ies)/
+ * reorderCategories/reorderSiblings/moveCategory/addCard/updateCard/removeCard/
+ * moveCard/reorderCardsInCategory）已经各自统一在 set() 后调用本函数。
+ */
+export function notifyBookmarksChanged() {
+  scheduleBookmarksSyncPush()
+}
+
+/** 暴露给外部用：检查当前 meta.enabled 状态（如 onChanged listener 启动检测） */
+export async function isSyncEnabled(): Promise<boolean> {
+  const m = await getSyncMeta()
+  return !!m.enabled
 }

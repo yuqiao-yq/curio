@@ -1,17 +1,21 @@
+import type { UserSettings } from '../../types/bookmark'
 import { cn } from '../../utils/cn'
 import { DialogShell } from './DialogShell'
+import { SyncSection } from './SyncSection'
 
 /**
- * 数据管理弹层：4 个数据操作入口。
+ * 数据管理弹层：4 个数据操作入口 + 跨设备同步面板。
  * 操作回调来自外层 Topbar（已经包了 setDataDialogOpen(false)）。
  */
 export function DataDialog({
+  settings,
   onClose,
   onImportFromBrowser,
   onExportToBrowser,
   onImportJson,
   onExportJson,
 }: {
+  settings: UserSettings
   onClose: () => void
   onImportFromBrowser: () => void
   onExportToBrowser: () => void
@@ -28,31 +32,36 @@ export function DataDialog({
       }
       onClose={onClose}
     >
-      <div className="space-y-2">
-        <ActionItem
-          icon="🌐"
-          title="从浏览器导入书签"
-          desc="一键合并当前浏览器现有书签，按文件夹层级保留分类。"
-          onClick={onImportFromBrowser}
-        />
-        <ActionItem
-          icon="🔄"
-          title="同步到浏览器书签"
-          desc="把当前所有分类与书签镜像到浏览器原生书签的指定文件夹中。"
-          onClick={onExportToBrowser}
-        />
-        <ActionItem
-          icon="📥"
-          title="导入配置文件"
-          desc="选择 JSON 配置文件，支持「合并」或「替换」两种模式。"
-          onClick={onImportJson}
-        />
-        <ActionItem
-          icon="📤"
-          title="导出配置文件"
-          desc="将当前所有分类、书签、设置打包为 JSON 下载到本地。"
-          onClick={onExportJson}
-        />
+      <div className="space-y-3">
+        <div className="space-y-2">
+          <ActionItem
+            icon="🌐"
+            title="从浏览器导入书签"
+            desc="一键合并当前浏览器现有书签，按文件夹层级保留分类。"
+            onClick={onImportFromBrowser}
+          />
+          <ActionItem
+            icon="🔄"
+            title="同步到浏览器书签"
+            desc="把当前所有分类与书签镜像到浏览器原生书签的指定文件夹中。"
+            onClick={onExportToBrowser}
+          />
+          <ActionItem
+            icon="📥"
+            title="导入配置文件"
+            desc="选择 JSON 配置文件，支持「合并」或「替换」两种模式。"
+            onClick={onImportJson}
+          />
+          <ActionItem
+            icon="📤"
+            title="导出配置文件"
+            desc="将当前所有分类、书签、设置打包为 JSON 下载到本地。"
+            onClick={onExportJson}
+          />
+        </div>
+
+        {/* 跨设备同步（V1.5）：与数据导入导出归一处「数据管理」语义下 */}
+        <SyncSection settings={settings} />
       </div>
     </DialogShell>
   )
