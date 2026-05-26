@@ -85,6 +85,14 @@ const PRESET_FONT_COLORS: Array<{ key: string; label: string; value: string }> =
 
 const HEX_COLOR_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
 
+const TABS = [
+  { key: 'theme', label: '外观主题', icon: '🌗' },
+  { key: 'background', label: '背景', icon: '🖼️' },
+  { key: 'font', label: '文字颜色', icon: '🅰' },
+  { key: 'layout', label: '内容布局', icon: '🧱' },
+] as const
+type StyleTab = (typeof TABS)[number]['key']
+
 export function StyleDialog({
   settings,
   onClose,
@@ -94,6 +102,8 @@ export function StyleDialog({
   onClose: () => void
   onUpdate: (patch: Partial<UserSettings>) => Promise<void>
 }) {
+  const [activeTab, setActiveTab] = useState<StyleTab>('theme')
+
   // 自定义图片 URL 输入（仅当 wallpaper 不在预设里时回填）
   const isPreset = PRESET_WALLPAPERS.some((p) => p.value === (settings.wallpaper ?? ''))
   const [customUrl, setCustomUrl] = useState(isPreset ? '' : (settings.wallpaper ?? ''))
@@ -168,12 +178,33 @@ export function StyleDialog({
       width={560}
       onClose={onClose}
     >
-      <div className="space-y-4">
+      <div>
+        {/* Tab 切换：把原本平铺的 4 个 section 收成 4 个 tab，避免弹窗过长 */}
+        <div className="flex gap-1 border-b border-slate-200 dark:border-slate-700 mb-4 -mx-5 px-5 overflow-x-auto">
+          {TABS.map((t) => {
+            const active = activeTab === t.key
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setActiveTab(t.key)}
+                className={cn(
+                  'px-3 py-2 text-sm flex items-center gap-1.5 border-b-2 -mb-px transition-colors shrink-0',
+                  active
+                    ? 'border-brand text-brand font-medium'
+                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200',
+                )}
+              >
+                <span className="text-xs leading-none">{t.icon}</span>
+                {t.label}
+              </button>
+            )
+          })}
+        </div>
+
         {/* 主题 */}
+        {activeTab === 'theme' && (
         <section className="rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-white/55 dark:bg-slate-900/45 p-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-            外观主题
-          </h4>
           <div className="grid grid-cols-3 gap-2">
             {THEME_OPTIONS.map((opt) => {
               const active = settings.theme === opt.key
@@ -205,13 +236,11 @@ export function StyleDialog({
             })}
           </div>
         </section>
+        )}
 
         {/* 自定义背景 */}
+        {activeTab === 'background' && (
         <section className="rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-white/55 dark:bg-slate-900/45 p-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-            背景
-          </h4>
-
           {/* 预设缩略图 */}
           <div className="grid grid-cols-6 gap-2 mb-3">
             {PRESET_WALLPAPERS.map((p) => {
@@ -366,13 +395,11 @@ export function StyleDialog({
             </p>
           </div>
         </section>
+        )}
 
         {/* 文字颜色 */}
+        {activeTab === 'font' && (
         <section className="rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-white/55 dark:bg-slate-900/45 p-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-            文字颜色
-          </h4>
-
           {/* 预设色块 */}
           <div className="grid grid-cols-6 gap-2 mb-3">
             {PRESET_FONT_COLORS.map((p) => {
@@ -467,12 +494,11 @@ export function StyleDialog({
             该颜色仅影响"未单独设色"的文字（如卡片标题等）；按钮主色、辅助灰字等带有自身样式的元素不会被覆盖。
           </p>
         </section>
+        )}
 
         {/* 排版偏好（v0.21.15）：子文件夹 section 的默认展开/折叠 */}
+        {activeTab === 'layout' && (
         <section className="rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-white/55 dark:bg-slate-900/45 p-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-            内容布局
-          </h4>
           <div className="mb-3">
             <div className="text-sm text-slate-700 dark:text-slate-200 mb-2">
               书签卡片尺寸
@@ -600,6 +626,7 @@ export function StyleDialog({
             </div>
           </label>
         </section>
+        )}
       </div>
     </DialogShell>
   )
