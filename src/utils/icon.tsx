@@ -10,7 +10,25 @@ import { cn } from './cn'
  */
 export function isImageIcon(value?: string | null): boolean {
   if (!value) return false
-  return /^(https?:|data:image\/)/i.test(value.trim())
+  const v = value.trim()
+  // 严格前缀：http(s):// 或 data:image/
+  if (/^(https?:|data:image\/)/i.test(v)) return true
+  // 容错：碰到过 c.icon 被存成裸 base64（'iVBORw0KGgo...'）或带有前导引号 / 零宽字符
+  // 的情况；这种值不该当作纯文本 emoji 渲染（会喷一长串字符），按 image 处理 +
+  // 兜底拼回 data:image/png;base64, 让 <img> 能尝试加载，加载失败 onError 隐藏。
+  if (/^[a-z0-9+/=]{32,}$/i.test(v)) return true
+  return false
+}
+
+/**
+ * 把 isImageIcon 视为 image 但缺前缀的"裸 base64" 值修正回完整 data URL，
+ * 让 <img src> 能正常加载。已经是 http(s)/data:image 前缀的值不动。
+ */
+function normalizeImageSrc(value: string): string {
+  const v = value.trim()
+  if (/^(https?:|data:image\/)/i.test(v)) return v
+  if (/^[a-z0-9+/=]{32,}$/i.test(v)) return `data:image/png;base64,${v}`
+  return v
 }
 
 interface IconViewProps {
@@ -67,7 +85,7 @@ export function IconView({
       >
         {isImg ? (
           <img
-            src={v}
+            src={normalizeImageSrc(v!)}
             alt=""
             className={cn(imgClassName)}
             onError={(e) => {
@@ -84,7 +102,7 @@ export function IconView({
   if (isImg) {
     return (
       <img
-        src={v}
+        src={normalizeImageSrc(v!)}
         alt=""
         title={title}
         className={cn(imgClassName, className)}
