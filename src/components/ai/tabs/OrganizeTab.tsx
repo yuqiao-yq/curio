@@ -24,7 +24,7 @@ import {
 import { useAIPanelStore } from '../../../ai/panel/usePanelStore'
 import { toast } from '../../../stores/useToastStore'
 import { cn } from '../../../utils/cn'
-import { IconView } from '../../../utils/icon'
+import { IconView, isImageIcon } from '../../../utils/icon'
 import { DiffViewer } from '../DiffViewer'
 
 /**
@@ -119,25 +119,33 @@ function ConfigStage() {
               <div className="text-[11px] text-slate-400 mt-2 mb-1">
                 按某个顶层分类整理：
               </div>
-              {topCategories.map((c) => (
-                <RangeOption
-                  key={c.id}
-                  label={
-                    <span className="flex items-center gap-1.5 min-w-0">
-                      <IconView
-                        value={c.icon}
-                        fallback="📁"
-                        emojiClassName="text-sm leading-none"
-                        imgClassName="w-4 h-4 rounded-sm object-contain"
-                      />
-                      <span className="truncate">{c.name}</span>
-                    </span>
-                  }
-                  description={`${cards.filter((x) => x.categoryId === c.id || isDescendantOf(x.categoryId, c.id, categories)).length} 条`}
-                  checked={range.type === 'category' && range.id === c.id}
-                  onClick={() => setRange({ type: 'category', id: c.id })}
-                />
-              ))}
+              {topCategories.map((c) => {
+                // 兜底：历史数据里碰到过 c.name 被存成了 data URL（疑似旧版 IconPicker
+                // 上传时写错字段）。此时把 name 当作 icon 来源，name 显示占位文本，
+                // 避免一长串 base64 喷到选项里。
+                const nameIsImage = isImageIcon(c.name)
+                const displayName = nameIsImage ? '(未命名)' : c.name
+                const displayIcon = c.icon || (nameIsImage ? c.name : undefined)
+                return (
+                  <RangeOption
+                    key={c.id}
+                    label={
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <IconView
+                          value={displayIcon}
+                          fallback="📁"
+                          emojiClassName="text-sm leading-none"
+                          imgClassName="w-4 h-4 rounded-sm object-contain"
+                        />
+                        <span className="truncate">{displayName}</span>
+                      </span>
+                    }
+                    description={`${cards.filter((x) => x.categoryId === c.id || isDescendantOf(x.categoryId, c.id, categories)).length} 条`}
+                    checked={range.type === 'category' && range.id === c.id}
+                    onClick={() => setRange({ type: 'category', id: c.id })}
+                  />
+                )
+              })}
             </div>
           )}
         </div>

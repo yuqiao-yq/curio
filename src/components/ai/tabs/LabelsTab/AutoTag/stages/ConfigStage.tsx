@@ -5,7 +5,7 @@ import { useTaggerStore } from '../../../../../../ai/services/useTaggerStore'
 import { selectCardsForTagging } from '../../../../../../ai/services/tagger'
 import { TAG_RANGE_LABEL } from '../../../../../../ai/types'
 import { cn } from '../../../../../../utils/cn'
-import { IconView } from '../../../../../../utils/icon'
+import { IconView, isImageIcon } from '../../../../../../utils/icon'
 import { Notice, NoAINotice, isDescendantOf } from '../../_shared'
 
 /* ──────────────────────────────────────────────────────────────────────
@@ -59,25 +59,31 @@ export function ConfigStage() {
               <div className="text-[11px] text-slate-400 mt-2 mb-1">
                 按某个顶层分类（含后代）打标签：
               </div>
-              {topCategories.map((c) => (
-                <RangeOption
-                  key={c.id}
-                  label={
-                    <span className="flex items-center gap-1.5 min-w-0">
-                      <IconView
-                        value={c.icon}
-                        fallback="📁"
-                        emojiClassName="text-sm leading-none"
-                        imgClassName="w-4 h-4 rounded-sm object-contain"
-                      />
-                      <span className="truncate">{c.name}</span>
-                    </span>
-                  }
-                  description={`${cards.filter((x) => x.categoryId === c.id || isDescendantOf(x.categoryId, c.id, categories)).length} 条`}
-                  checked={range.type === 'category' && range.id === c.id}
-                  onClick={() => setRange({ type: 'category', id: c.id })}
-                />
-              ))}
+              {topCategories.map((c) => {
+                // 兜底：c.name 误存为 data URL 时把它当 icon，name 用占位文本
+                const nameIsImage = isImageIcon(c.name)
+                const displayName = nameIsImage ? '(未命名)' : c.name
+                const displayIcon = c.icon || (nameIsImage ? c.name : undefined)
+                return (
+                  <RangeOption
+                    key={c.id}
+                    label={
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <IconView
+                          value={displayIcon}
+                          fallback="📁"
+                          emojiClassName="text-sm leading-none"
+                          imgClassName="w-4 h-4 rounded-sm object-contain"
+                        />
+                        <span className="truncate">{displayName}</span>
+                      </span>
+                    }
+                    description={`${cards.filter((x) => x.categoryId === c.id || isDescendantOf(x.categoryId, c.id, categories)).length} 条`}
+                    checked={range.type === 'category' && range.id === c.id}
+                    onClick={() => setRange({ type: 'category', id: c.id })}
+                  />
+                )
+              })}
             </div>
           )}
         </div>
