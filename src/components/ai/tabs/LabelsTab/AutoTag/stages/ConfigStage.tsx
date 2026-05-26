@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
 import { useBookmarkStore } from '../../../../../../stores/useBookmarkStore'
-import { useAISettingsStore } from '../../../../../../ai/useAISettingsStore'
+import { useIsAIConfigured } from '../../../../../../ai/useAISettingsStore'
 import { useTaggerStore } from '../../../../../../ai/services/useTaggerStore'
 import { selectCardsForTagging } from '../../../../../../ai/services/tagger'
-import { TAG_RANGE_LABEL, isAIConfigured } from '../../../../../../ai/types'
+import { TAG_RANGE_LABEL } from '../../../../../../ai/types'
 import { cn } from '../../../../../../utils/cn'
 import { IconView } from '../../../../../../utils/icon'
 import { Notice, NoAINotice, isDescendantOf } from '../../_shared'
@@ -14,8 +14,7 @@ import { Notice, NoAINotice, isDescendantOf } from '../../_shared'
  * ────────────────────────────────────────────────────────────────────── */
 
 export function ConfigStage() {
-  const settings = useAISettingsStore()
-  const configured = isAIConfigured(settings)
+  const configured = useIsAIConfigured()
   const cards = useBookmarkStore((s) => s.cards)
   const categories = useBookmarkStore((s) => s.categories)
   const range = useTaggerStore((s) => s.range)

@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { useAIPanelStore } from '../../../ai/panel/usePanelStore'
-import { useAISettingsStore } from '../../../ai/useAISettingsStore'
+import {
+  useAISettingsStore,
+  useIsAIConfigured,
+} from '../../../ai/useAISettingsStore'
 import {
   runChat,
   runRagChat,
   suggestChatTitle,
 } from '../../../ai/services/chatter'
 import type { RetrievedDoc } from '../../../ai/services/retriever'
-import { isAIConfigured } from '../../../ai/types'
 import type { ChatMessage } from '../../../ai/types'
 import { useBookmarkStore } from '../../../stores/useBookmarkStore'
 import { usePageIndex } from '../../../ai/services/usePageIndex'
@@ -45,8 +48,16 @@ interface StoredMessage extends ChatMessage {
  * - 多对话独立挂着（已支持，因为 tab 本身就是多份）
  */
 export function ChatTab({ tabId }: { tabId: string }) {
-  const settings = useAISettingsStore()
-  const configured = isAIConfigured(settings)
+  const configured = useIsAIConfigured()
+  // 只订阅 header / 切换路由 / 中文警告分支用到的三块；
+  // 其余字段（apiKey/privacy 等）变更不会触发本组件 re-render。
+  const { providers, chatRoute, setRoute } = useAISettingsStore(
+    useShallow((s) => ({
+      providers: s.providers,
+      chatRoute: s.routing.chat,
+      setRoute: s.setRoute,
+    })),
+  )
   const cards = useBookmarkStore((s) => s.cards)
   const indexedIds = usePageIndex((s) => s.indexedIds)
 
@@ -124,7 +135,7 @@ export function ChatTab({ tabId }: { tabId: string }) {
             content: m.content,
           })),
           cards,
-          settings,
+          settings: useAISettingsStore.getState(),
           signal: controller.signal,
           onDelta: (_, full) => setStreamingText(full),
           onRetrieved: (docs) => {
@@ -153,7 +164,7 @@ export function ChatTab({ tabId }: { tabId: string }) {
             },
             ...nextMessages.map((m) => ({ role: m.role, content: m.content })),
           ],
-          settings,
+          settings: useAISettingsStore.getState(),
           signal: controller.signal,
           onDelta: (_, full) => setStreamingText(full),
         })
@@ -268,17 +279,15 @@ export function ChatTab({ tabId }: { tabId: string }) {
 
   // 当前 chat 路由对应的 Provider（用于 header 展示模型名 + 中文警告判断）
   const currentChatProvider =
-    settings.providers.find(
-      (p) => p.id === (settings.routing.chat ?? settings.providers[0]?.id),
-    ) ?? null
+    providers.find((p) => p.id === (chatRoute ?? providers[0]?.id)) ?? null
   const isWindowAI = currentChatProvider?.type === 'window-ai'
   // 远程 Provider 列表（供"快速切换"用）
-  const remoteProviders = settings.providers.filter((p) => p.type !== 'window-ai')
+  const remoteProviders = providers.filter((p) => p.type !== 'window-ai')
   const switchToRemote = (providerId: string) => {
-    settings.setRoute('chat', providerId)
+    setRoute('chat', providerId)
     toast.success(
       '已切换 chat 路由',
-      settings.providers.find((p) => p.id === providerId)?.name ?? '',
+      providers.find((p) => p.id === providerId)?.name ?? '',
     )
   }
 

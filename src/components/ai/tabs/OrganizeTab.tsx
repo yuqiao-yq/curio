@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { useBookmarkStore } from '../../../stores/useBookmarkStore'
-import { useAISettingsStore } from '../../../ai/useAISettingsStore'
+import { useAISettingsStore, useIsAIConfigured } from '../../../ai/useAISettingsStore'
 import { useOrganizeStore } from '../../../ai/services/useOrganizeStore'
 import { usePassiveSuggest } from '../../../ai/services/usePassiveSuggest'
 import {
@@ -17,7 +18,6 @@ import {
 } from '../../../ai/services/plan'
 import {
   ORGANIZE_STYLE_LABEL,
-  isAIConfigured,
   type OrganizeRange,
   type OrganizeStyle,
 } from '../../../ai/types'
@@ -65,8 +65,7 @@ export function OrganizeTab() {
  * ────────────────────────────────────────────── */
 
 function ConfigStage() {
-  const settings = useAISettingsStore()
-  const configured = isAIConfigured(settings)
+  const configured = useIsAIConfigured()
   const cards = useBookmarkStore((s) => s.cards)
   const categories = useBookmarkStore((s) => s.categories)
   const range = useOrganizeStore((s) => s.range)
@@ -255,7 +254,15 @@ function RangeOption({
  * ────────────────────────────────────────────── */
 
 function EstimateStage() {
-  const settings = useAISettingsStore()
+  // 只反应式订阅展示所需的字段；真正传给 runOrganize 的 settings 在
+  // handleStart 触发时通过 getState() 读，避免无关字段（apiKey 等）re-render。
+  const { providers, routing, anonymousMode } = useAISettingsStore(
+    useShallow((s) => ({
+      providers: s.providers,
+      routing: s.routing,
+      anonymousMode: s.privacy.anonymousMode,
+    })),
+  )
   const cards = useBookmarkStore((s) => s.cards)
   const categories = useBookmarkStore((s) => s.categories)
   const range = useOrganizeStore((s) => s.range)
@@ -279,8 +286,8 @@ function EstimateStage() {
   const estimatedOutputTokens = targetCards.length * 15
 
   // 取 chat provider 的 model 估成本
-  const provider = settings.providers.find(
-    (p) => p.id === (settings.routing.organize ?? settings.routing.chat),
+  const provider = providers.find(
+    (p) => p.id === (routing.organize ?? routing.chat),
   )
   const cost = provider
     ? estimateCostCny(provider.model, estimatedPromptTokens, estimatedOutputTokens)
@@ -295,7 +302,7 @@ function EstimateStage() {
         style,
         cards,
         categories,
-        settings,
+        settings: useAISettingsStore.getState(),
         signal: controller.signal,
         onProgress: setProgress,
       })
@@ -324,7 +331,7 @@ function EstimateStage() {
         <Stat
           label="发送数据"
           value={
-            settings.privacy.anonymousMode
+            anonymousMode
               ? '标题 + 域名（已匿名）'
               : '标题 + 域名'
           }

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { browser } from 'wxt/browser'
 import { useBookmarkStore } from '../../src/stores/useBookmarkStore'
-import { useAISettingsStore } from '../../src/ai/useAISettingsStore'
+import {
+  useAISettingsStore,
+  useIsAIConfigured,
+} from '../../src/ai/useAISettingsStore'
 import { runSuggester } from '../../src/ai/services/suggester'
-import { isAIConfigured } from '../../src/ai/types'
 import type { Category } from '../../src/types/bookmark'
 import { getHostname } from '../../src/utils/favicon'
 import { cn } from '../../src/utils/cn'
@@ -37,8 +39,8 @@ export default function Popup() {
   // 所以这里仍要显式 init 一次
   const aiInit = useAISettingsStore((s) => s.init)
   const aiHydrated = useAISettingsStore((s) => s.hydrated)
-  const aiSettings = useAISettingsStore()
-  const aiAvailable = aiHydrated && isAIConfigured(aiSettings)
+  const aiConfigured = useIsAIConfigured()
+  const aiAvailable = aiHydrated && aiConfigured
 
   // 当前 active tab 信息（用于「添加当前页面」）
   const [tabInfo, setTabInfo] = useState<{ url: string; title: string } | null>(
@@ -150,7 +152,7 @@ export default function Popup() {
         page: { title: draftTitle || tabInfo.title, url: tabInfo.url },
         categories,
         cards,
-        settings: aiSettings,
+        settings: useAISettingsStore.getState(),
         signal: controller.signal,
       })
       // 仅在本次请求未被取消时应用结果

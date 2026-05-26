@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { useBookmarkStore } from '../../../../../../stores/useBookmarkStore'
 import { useAISettingsStore } from '../../../../../../ai/useAISettingsStore'
 import { useTaggerStore } from '../../../../../../ai/services/useTaggerStore'
@@ -12,7 +13,14 @@ import { cn } from '../../../../../../utils/cn'
  * ────────────────────────────────────────────────────────────────────── */
 
 export function EstimateStage() {
-  const settings = useAISettingsStore()
+  // 只订阅 estimate 视图实际用到的两块；其它字段（apiKey/preferLocal 等）变更
+  // 不该让本组件 re-render。runTagger 调用时通过 getState() 拿完整 settings。
+  const { providers, routing } = useAISettingsStore(
+    useShallow((s) => ({
+      providers: s.providers,
+      routing: s.routing,
+    })),
+  )
   const cards = useBookmarkStore((s) => s.cards)
   const categories = useBookmarkStore((s) => s.categories)
   const range = useTaggerStore((s) => s.range)
@@ -27,8 +35,8 @@ export function EstimateStage() {
     [range, cards, categories],
   )
 
-  const provider = settings.providers.find(
-    (p) => p.id === (settings.routing.organize ?? settings.routing.chat),
+  const provider = providers.find(
+    (p) => p.id === (routing.organize ?? routing.chat),
   )
   const { promptTokens, outputTokens, costCny } = useMemo(
     () => estimateTaggerCost(targetCards, provider?.model ?? ''),
@@ -43,7 +51,7 @@ export function EstimateStage() {
         range,
         cards,
         categories,
-        settings,
+        settings: useAISettingsStore.getState(),
         signal: controller.signal,
         onProgress: setProgress,
       })

@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { browser } from 'wxt/browser'
 import { useBookmarkStore } from '../../stores/useBookmarkStore'
-import { useAISettingsStore } from '../useAISettingsStore'
-import { isAIConfigured } from '../types'
+import { useAISettingsStore, useIsAIConfigured } from '../useAISettingsStore'
 
 /**
  * 被动整理建议（V1.5 §5.2）
@@ -70,8 +69,9 @@ export interface PassiveSuggestState {
 
 export function usePassiveSuggest(): PassiveSuggestState {
   const cards = useBookmarkStore((s) => s.cards)
-  const settings = useAISettingsStore()
-  const enabled = settings.passiveSuggest && isAIConfigured(settings)
+  const passiveSuggest = useAISettingsStore((s) => s.passiveSuggest)
+  const configured = useIsAIConfigured()
+  const enabled = passiveSuggest && configured
 
   const [baseline, setBaseline] = useState<PassiveBaseline | null>(null)
   const [hydrated, setHydrated] = useState(false)

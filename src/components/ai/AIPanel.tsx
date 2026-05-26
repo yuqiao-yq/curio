@@ -3,15 +3,15 @@ import { createPortal } from 'react-dom'
 import { useAIPanelStore } from '../../ai/panel/usePanelStore'
 import { useDraggable } from '../../ai/panel/useDraggable'
 import { useResizable } from '../../ai/panel/useResizable'
+import { useShallow } from 'zustand/react/shallow'
 import {
   PANEL_DEFAULT_SIZE,
   defaultPanelPosition,
-  isAIConfigured,
   type AITabType,
   type PanelPosition,
   type PanelSize,
 } from '../../ai/types'
-import { useAISettingsStore } from '../../ai/useAISettingsStore'
+import { useAISettingsStore, useIsAIConfigured } from '../../ai/useAISettingsStore'
 import { WindowAIProvider } from '../../ai/providers/window-ai'
 import { cn } from '../../utils/cn'
 import { AIPanelHeader } from './AIPanelHeader'
@@ -225,8 +225,15 @@ function TabContent({ type, tabId }: { type: AITabType; tabId: string }) {
  * 模型可用性在用户会话期间几乎不变）。
  */
 function FooterStatus() {
-  const settings = useAISettingsStore()
-  const configured = isAIConfigured(settings)
+  const configured = useIsAIConfigured()
+  // 只订阅 footer 真正用到的三块：provider 列表、chat 路由、preferLocal 偏好
+  const { providers, chatRoute, preferLocal } = useAISettingsStore(
+    useShallow((s) => ({
+      providers: s.providers,
+      chatRoute: s.routing.chat,
+      preferLocal: s.preferLocal,
+    })),
+  )
   const [windowAIReady, setWindowAIReady] = useState<boolean | null>(null)
 
   useEffect(() => {
@@ -245,15 +252,15 @@ function FooterStatus() {
 
   // 取当前 chat 任务真实指向的 provider 名（含 prefer-local 影响）
   const chatProviderName = (() => {
-    if (settings.preferLocal && windowAIReady) {
-      const local = settings.providers.find((p) => p.type === 'window-ai')
+    if (preferLocal && windowAIReady) {
+      const local = providers.find((p) => p.type === 'window-ai')
       if (local) return local.name
     }
-    const id = settings.routing.chat ?? settings.providers[0]?.id
-    return settings.providers.find((p) => p.id === id)?.name ?? '(未指定)'
+    const id = chatRoute ?? providers[0]?.id
+    return providers.find((p) => p.id === id)?.name ?? '(未指定)'
   })()
 
-  if (settings.preferLocal) {
+  if (preferLocal) {
     if (windowAIReady === null) {
       // 检测中
       return (

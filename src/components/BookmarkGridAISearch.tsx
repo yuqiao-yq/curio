@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { BookmarkCard, Category } from '../types/bookmark'
 import { useBookmarkStore } from '../stores/useBookmarkStore'
-import { useAISettingsStore } from '../ai/useAISettingsStore'
-import { isAIConfigured } from '../ai/types'
+import { useAISettingsStore, useIsAIConfigured } from '../ai/useAISettingsStore'
 import {
   searchByEmbedding,
   type EmbedSearchHit,
@@ -41,9 +40,13 @@ type AISearchState =
   | { status: 'error'; message: string }
 
 export default function AISearchView({ query, cards, categories }: AISearchViewProps) {
-  const settings = useAISettingsStore()
   const setSearchKeyword = useBookmarkStore((s) => s.setSearchKeyword)
-  const aiReady = isAIConfigured(settings)
+  const aiReady = useIsAIConfigured()
+  // 仅订阅与「embedding 路由 + provider 列表大小」相关的两个标识量；
+  // 真正的 settings 对象在 debounce fire 时通过 getState() 读，避免
+  // 任何 AI 设置字段（apiKey 等）变更都触发本组件 re-render。
+  const embeddingProviderId = useAISettingsStore((s) => s.routing.embedding)
+  const providersCount = useAISettingsStore((s) => s.providers.length)
 
   const [state, setState] = useState<AISearchState>({ status: 'idle' })
 
@@ -60,7 +63,7 @@ export default function AISearchView({ query, cards, categories }: AISearchViewP
         const hits = await searchByEmbedding({
           query,
           cards,
-          settings,
+          settings: useAISettingsStore.getState(),
           topK: 30,
           minScore: 0.2,
           signal: controller.signal,
@@ -77,8 +80,7 @@ export default function AISearchView({ query, cards, categories }: AISearchViewP
       controller.abort()
       clearTimeout(timer)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, aiReady, settings.routing.embedding, settings.providers.length])
+  }, [query, aiReady, embeddingProviderId, providersCount, cards])
 
   // 分类路径快查（与主搜索分支同款实现）
   const pathOf = useMemo(() => {

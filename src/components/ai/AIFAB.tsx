@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom'
 import { useAIPanelStore } from '../../ai/panel/usePanelStore'
-import { useAISettingsStore } from '../../ai/useAISettingsStore'
-import { FAB_OFFSET, FAB_SIZE, isAIConfigured } from '../../ai/types'
+import { useIsAIConfigured } from '../../ai/useAISettingsStore'
+import { FAB_OFFSET, FAB_SIZE } from '../../ai/types'
 import { cn } from '../../utils/cn'
 
 interface Props {
@@ -40,8 +40,7 @@ export function AIFAB({
   const visible = useAIPanelStore((s) => s.visible)
   const open = useAIPanelStore((s) => s.open)
   // 实时联动 AI 设置：providers 增加 / 启用切换都会自动反映到 FAB 颜色
-  const settings = useAISettingsStore()
-  const configured = isAIConfigured(settings)
+  const configured = useIsAIConfigured()
 
   // 浮窗已打开（包括最小化）时不显示 FAB
   if (visible) return null

@@ -180,6 +180,23 @@ export const useAISettingsStore = create<AISettingsStore>((set, get) => ({
   },
 }))
 
+/* ──────────────────────────────────────────────────────────────────────
+ * 派生 selector：只订阅与「AI 是否可用」相关的最少字段。
+ *
+ * 直接 `useAISettingsStore()` 整体订阅会让任何字段变更都触发整组消费者
+ * re-render（13 处）。如果消费者只想知道 boolean 配置态，用本 hook：
+ * 只有 enabled / providers / routing.chat 变动时才重渲。
+ * ────────────────────────────────────────────────────────────────────── */
+export function useIsAIConfigured(): boolean {
+  return useAISettingsStore((s) => {
+    if (!s.enabled) return false
+    if (s.providers.length === 0) return false
+    const chatId = s.routing.chat
+    if (!chatId) return false
+    return s.providers.some((p) => p.id === chatId)
+  })
+}
+
 // ─── 持久化（debounce 200ms） ────────────────────────
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null
