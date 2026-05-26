@@ -11,6 +11,7 @@ import { cn } from '../../../../utils/cn'
 import { toast } from '../../../../stores/useToastStore'
 import { confirmDialog } from '../../../Dialog'
 import { ActionBtn } from './shared'
+import { isImageIcon } from '../../../../utils/icon'
 
 /* ─────────────────────────────────────────────────────────────
  * 整理质检 section（V2.0 §6.4 重复 / 失效检测）
@@ -427,7 +428,7 @@ function QualityPreview({
             <option value="">归档到…</option>
             {flatCategories.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.icon ?? '📁'} {c.name}
+                {isImageIcon(c.icon) ? '📁' : (c.icon ?? '📁')} {c.name}
               </option>
             ))}
           </select>

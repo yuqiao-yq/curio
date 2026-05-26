@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { cn } from '../../../../utils/cn'
 
 /* ─────────────────────────────────────────────────────────────
@@ -171,7 +172,8 @@ export function RangeChip({
 }: {
   checked: boolean
   onClick: () => void
-  label: string
+  /** 接 ReactNode 以支持自定义图标（data:image / http URL）渲染为 <img/> */
+  label: ReactNode
   disabled?: boolean
 }) {
   return (
@@ -198,7 +200,9 @@ export function RangeChip({
       >
         {checked && <span className="w-1 h-1 rounded-full bg-white" />}
       </span>
-      <span className="flex-1 truncate">{label}</span>
+      <span className="flex-1 min-w-0 flex items-center gap-1.5 truncate">
+        {label}
+      </span>
     </button>
   )
 }

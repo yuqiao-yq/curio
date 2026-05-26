@@ -17,6 +17,7 @@ import { useAIPanelStore } from '../../../ai/panel/usePanelStore'
 import { toast } from '../../../stores/useToastStore'
 import { confirmDialog, promptDialog } from '../../Dialog'
 import { cn } from '../../../utils/cn'
+import { IconView } from '../../../utils/icon'
 
 /**
  * 「标签」Tab —— V1.0 §4.4 自动打标签 + 标签管理
@@ -160,7 +161,17 @@ function ConfigStage() {
               {topCategories.map((c) => (
                 <RangeOption
                   key={c.id}
-                  label={`${c.icon ?? '📁'} ${c.name}`}
+                  label={
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <IconView
+                        value={c.icon}
+                        fallback="📁"
+                        emojiClassName="text-sm leading-none"
+                        imgClassName="w-4 h-4 rounded-sm object-contain"
+                      />
+                      <span className="truncate">{c.name}</span>
+                    </span>
+                  }
                   description={`${cards.filter((x) => x.categoryId === c.id || isDescendantOf(x.categoryId, c.id, categories)).length} 条`}
                   checked={range.type === 'category' && range.id === c.id}
                   onClick={() => setRange({ type: 'category', id: c.id })}
@@ -203,7 +214,7 @@ function RangeOption({
   checked,
   onClick,
 }: {
-  label: string
+  label: React.ReactNode
   description?: string
   checked: boolean
   onClick: () => void

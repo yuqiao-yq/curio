@@ -17,6 +17,7 @@ import { cn } from '../../../../utils/cn'
 import { toast } from '../../../../stores/useToastStore'
 import { confirmDialog } from '../../../Dialog'
 import { ActionBtn, RangeChip, StatRow } from './shared'
+import { IconView } from '../../../../utils/icon'
 
 /* ─────────────────────────────────────────────────────────────
  * 内容抓取 section（V2.0 §6.1）
@@ -298,7 +299,17 @@ export function CrawlSection() {
                     key={c.id}
                     checked={range.type === 'category' && range.id === c.id}
                     onClick={() => setRange({ type: 'category', id: c.id })}
-                    label={`${c.icon ?? '📁'} ${c.name}`}
+                    label={
+                      <>
+                        <IconView
+                          value={c.icon}
+                          fallback="📁"
+                          emojiClassName="text-sm leading-none"
+                          imgClassName="w-4 h-4 rounded-sm object-contain"
+                        />
+                        <span className="truncate">{c.name}</span>
+                      </>
+                    }
                   />
                 ))}
               </div>
