@@ -25,6 +25,7 @@ import { usePassiveSuggest } from '../../src/ai/services/usePassiveSuggest'
 import { useOrganizeStore } from '../../src/ai/services/useOrganizeStore'
 import { usePageIndex } from '../../src/ai/services/usePageIndex'
 import { Onboarding, useOnboardingStore } from '../../src/components/Onboarding'
+import { useExternalLinkDrop } from '../../src/components/useExternalLinkDrop'
 
 /**
  * v0.21.x：AI 浮窗与副浮窗按需加载。
@@ -297,6 +298,18 @@ export default function App() {
       ? Math.min(64, Math.max(0, backgroundBlur))
       : 0
 
+  // ─── 外部链接拖入快速添加（v0.22.x）─────────────
+  // 监听挂在主区 <main> 上；与 dnd-kit 内部拖拽通过 DataTransfer.types 区分
+  const {
+    hoveredCategoryId: dropHoverCatId,
+    onDragOver: onLinkDragOver,
+    onDragLeave: onLinkDragLeave,
+    onDrop: onLinkDrop,
+  } = useExternalLinkDrop()
+  const dropHoverCat = dropHoverCatId
+    ? categories.find((c) => c.id === dropHoverCatId)
+    : null
+
   return (
     <div className="h-full w-full flex flex-col">
       {blurPx > 0 && (
@@ -346,7 +359,29 @@ export default function App() {
       <Topbar />
       <div className="flex-1 flex min-h-0">
         <CategorySidebar />
-        <main className="flex-1 overflow-y-auto p-6">
+        <main
+          className="relative flex-1 overflow-y-auto p-6"
+          onDragOver={onLinkDragOver}
+          onDragLeave={onLinkDragLeave}
+          onDrop={onLinkDrop}
+        >
+          {/* 外部链接拖入的视觉提示层：仅在 hover 有效目标时显示
+              - pointer-events-none 让用户的鼠标继续穿透到下层 onDragOver
+              - 高 z-index 但低于 toast / dialog，确保引导期间不打架 */}
+          {dropHoverCat && (
+            <div
+              aria-hidden
+              className="absolute inset-3 pointer-events-none z-[9000] rounded-2xl flex items-center justify-center"
+              style={{
+                boxShadow: 'inset 0 0 0 2px rgba(99, 102, 241, 0.55)',
+                background: 'rgba(99, 102, 241, 0.06)',
+              }}
+            >
+              <div className="px-4 py-2.5 rounded-full bg-white/95 dark:bg-slate-800/95 shadow-xl shadow-brand/20 text-sm font-medium text-brand backdrop-blur">
+                松开添加到「{dropHoverCat.name}」
+              </div>
+            </div>
+          )}
           {!initialized ? (
             <div className="text-center py-20 text-slate-400">加载中…</div>
           ) : topLevelCount === 0 ? (
