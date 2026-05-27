@@ -11,6 +11,7 @@ import { isImageIcon } from '../utils/icon'
 import { CardMenu, MenuIcons, type CardMenuItem } from './CardMenu'
 import { FaviconImg } from './FaviconImg'
 import { RelatedReadingDialog } from './RelatedReadingDialog'
+import { TagsEditorDialog, TagIcon } from './TagsEditorDialog'
 import { confirmDialog, promptDialog } from './Dialog'
 
 interface Props {
@@ -149,6 +150,8 @@ function BookmarkCardItemImpl({
   const titleInputRef = useRef<HTMLInputElement | null>(null)
   // §7.4 相关阅读弹层显隐
   const [showRelated, setShowRelated] = useState(false)
+  // v0.22.x 卡片标签编辑弹层
+  const [showTagsEditor, setShowTagsEditor] = useState(false)
 
   // 合并 ref（既给 dnd-kit，也给本组件用）
   const setRefs = (el: HTMLDivElement | null) => {
@@ -461,6 +464,13 @@ function BookmarkCardItemImpl({
                   onSelect: () => void handleEditNote(),
                 },
                 {
+                  key: 'tags',
+                  // 文案根据当前有无 tags 切换，与「备注」一致的命名风格
+                  label: card.tags && card.tags.length > 0 ? '编辑标签' : '添加标签',
+                  icon: <TagIcon />,
+                  onSelect: () => setShowTagsEditor(true),
+                } satisfies CardMenuItem,
+                {
                   key: 'related',
                   label: '相关阅读',
                   icon: <MenuIcons.Sparkle />,
@@ -555,6 +565,13 @@ function BookmarkCardItemImpl({
       <RelatedReadingDialog
         card={card}
         onClose={() => setShowRelated(false)}
+      />
+    )}
+    {/* v0.22.x 卡片标签编辑弹层 */}
+    {showTagsEditor && (
+      <TagsEditorDialog
+        card={card}
+        onClose={() => setShowTagsEditor(false)}
       />
     )}
     </>
