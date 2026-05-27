@@ -1,4 +1,4 @@
-# Tab It
+# Curio
 
 > 替代浏览器新标签页的书签整理工具，支持 Chrome / Edge / Firefox / Brave / Opera。
 
@@ -22,19 +22,19 @@
 
 ## 下载安装
 
-不想自己编译？直接到 [Releases 页面](https://github.com/yuqiao-yq/tab-it/releases/latest) 下载最新版 zip。
+不想自己编译？直接到 [Releases 页面](https://github.com/yuqiao-yq/curio/releases/latest) 下载最新版 zip。
 
 ### Chrome / Edge / Brave / Opera
 
-1. 下载 `tab-it-x.y.z-chrome.zip` 并解压到任意目录（**不要删除**这个目录，扩展运行时依赖它）
+1. 下载 `curio-x.y.z-chrome.zip` 并解压到任意目录（**不要删除**这个目录，扩展运行时依赖它）
 2. 打开 `chrome://extensions/`（Edge 是 `edge://extensions/`）
 3. 打开右上角 **开发者模式**
 4. 点击 **加载已解压的扩展程序**，选择刚才解压出来的目录
-5. 打开新标签页即可看到 Tab It
+5. 打开新标签页即可看到 Curio
 
 ### Firefox
 
-1. 下载 `tab-it-x.y.z-firefox.zip`
+1. 下载 `curio-x.y.z-firefox.zip`
 2. 打开 `about:debugging#/runtime/this-firefox`
 3. 点击 **临时载入附加组件**，选择 zip 内的 `manifest.json`
 
@@ -51,7 +51,7 @@
 ## 目录结构
 
 ```
-tab-it/
+curio/
 ├── docs/                   # 设计文档（架构、Roadmap）
 ├── entrypoints/
 │   ├── newtab/             # 新标签页主界面
@@ -102,7 +102,7 @@ pnpm build
 2. 开启右上角的 **开发者模式**
 3. 点击 **加载已解压的扩展程序**
 4. 选择项目下的 `.output/chrome-mv3` 目录
-5. 打开新标签页即可看到 Tab It 界面
+5. 打开新标签页即可看到 Curio 界面
 
 #### Firefox
 1. 打开 `about:debugging#/runtime/this-firefox`

@@ -24,7 +24,7 @@ import {
  * - z-index 由组件层管理（V1 单浮窗够用，V3 多浮窗时这里要扩展）
  */
 
-const STORAGE_KEY = 'tabit:ai-panel'
+const STORAGE_KEY = 'curio:ai-panel'
 
 interface PanelPersisted {
   visible: boolean

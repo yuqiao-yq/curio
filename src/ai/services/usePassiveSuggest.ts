@@ -22,7 +22,7 @@ import { useAISettingsStore, useIsAIConfigured } from '../useAISettingsStore'
  * - 用户在设置里关闭 passiveSuggest 后立即生效（hook 返回 shouldShow=false）
  */
 
-const STORAGE_KEY = 'tabit:passive-baseline'
+const STORAGE_KEY = 'curio:passive-baseline'
 const NEW_THRESHOLD = 10
 const COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000
 

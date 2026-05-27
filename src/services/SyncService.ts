@@ -35,15 +35,15 @@ import type {
 // ─── 常量 ─────────────────────────────────────────────────
 
 /** 偏好 payload key */
-export const KEY_SETTINGS_PAYLOAD = 'tabit:sync:settings'
+export const KEY_SETTINGS_PAYLOAD = 'curio:sync:settings'
 /** 书签 manifest key（包含 ts / chunkCount / totalBytes） */
-export const KEY_BM_MANIFEST = 'tabit:sync:bookmarks:meta'
+export const KEY_BM_MANIFEST = 'curio:sync:bookmarks:meta'
 /** 书签 chunk key 前缀 */
-export const KEY_BM_CHUNK_PREFIX = 'tabit:sync:bookmarks:c'
+export const KEY_BM_CHUNK_PREFIX = 'curio:sync:bookmarks:c'
 export const keyBmChunk = (i: number): string => `${KEY_BM_CHUNK_PREFIX}${i}`
 
 /** 本机同步元数据 key（统一存放 enabled / 各管线状态） */
-export const KEY_LOCAL_META = 'tabit:sync:meta'
+export const KEY_LOCAL_META = 'curio:sync:meta'
 
 export const PAYLOAD_VERSION = 1
 

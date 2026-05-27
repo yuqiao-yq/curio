@@ -1,6 +1,6 @@
-# Tab It - 开发路线图
+# Curio - 开发路线图
 
-> 本文档跟踪 Tab It 的**整体产品规划**。AI 相关能力有独立计划文档
+> 本文档跟踪 Curio 的**整体产品规划**。AI 相关能力有独立计划文档
 > [`AI_INTEGRATION_PLAN.md`](./AI_INTEGRATION_PLAN.md)（其中的"V1.0/V1.5/V2.0/V3.0"是 AI
 > 子阶段编号，与本路线图的 V 编号是两套体系，互不冲突）。
 >

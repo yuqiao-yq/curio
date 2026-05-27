@@ -63,7 +63,7 @@ export function HelpDialog({ source, onClose }: Props) {
         </div>
 
         {/* 体（弹窗内独立滚动，不动背景） */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 prose-tabit">
+        <div className="flex-1 overflow-y-auto px-6 py-5 prose-curio">
           <MarkdownView source={source} />
         </div>
 

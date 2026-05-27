@@ -1,4 +1,4 @@
-# Tab It - 架构与技术方案
+# Curio - 架构与技术方案
 
 > 一款替代浏览器新标签页（New Tab）的书签整理工具，支持 Chrome / Edge / Firefox / Brave / Opera 等主流浏览器。
 
@@ -325,7 +325,7 @@ interface SyncMeta {
 ## 12. 目录结构
 
 ```
-tab-it/
+curio/
 ├── docs/                    # 设计文档（ARCHITECTURE / ROADMAP / USER_GUIDE / AI_INTEGRATION_PLAN）
 ├── entrypoints/             # WXT 入口
 │   ├── newtab/              # 新标签页（主界面）

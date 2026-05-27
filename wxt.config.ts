@@ -10,8 +10,8 @@ export default defineConfig({
   // - chrome MV3：保留 'favicon' 权限（用于 chrome-extension://EXT_ID/_favicon/）
   // - firefox MV2：移除 'favicon'（不被支持，会触发 manifest 校验警告）
   manifest: ({ browser }) => ({
-    name: 'Tab It - 书签整理新标签页',
-    short_name: 'Tab It',
+    name: 'Curio - 书签整理新标签页',
+    short_name: 'Curio',
     description: '替代浏览器新标签页，DIY 你的个人书签整理面板',
     permissions: [
       'bookmarks',
@@ -39,7 +39,7 @@ export default defineConfig({
     },
     // 工具栏图标点击后弹出的小窗口；entrypoint 由 entrypoints/popup/ 提供
     action: {
-      default_title: 'Tab It',
+      default_title: 'Curio',
       default_popup: 'popup.html',
     },
   }),

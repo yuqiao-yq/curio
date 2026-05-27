@@ -31,7 +31,7 @@ class EmbeddingsDexie extends Dexie {
   embeddings!: Table<EmbeddingRow, string>
 
   constructor() {
-    super('tabit-embeddings')
+    super('curio-embeddings')
     // v1：只有 embeddings 表，主键 = bookmarkId
     this.version(1).stores({
       embeddings: 'bookmarkId, model, createdAt',

@@ -19,7 +19,7 @@ import {
  * - 「是否已配置」由 isAIConfigured(settings) 计算（types.ts 中导出）
  */
 
-const STORAGE_KEY = 'tabit:ai-settings'
+const STORAGE_KEY = 'curio:ai-settings'
 
 interface AISettingsStore extends AISettings {
   hydrated: boolean

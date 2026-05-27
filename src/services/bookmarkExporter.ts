@@ -2,18 +2,18 @@ import { browser, type Browser } from 'wxt/browser'
 import type { BookmarkCard, Category } from '../types/bookmark'
 
 /**
- * 同步 Tab It 数据到浏览器原生书签（单向：Tab It → 浏览器，镜像模式）。
+ * 同步 Curio 数据到浏览器原生书签（单向：Curio → 浏览器，镜像模式）。
  *
  * ─── 设计要点 ─────────────────────────────────────────────────
  *  1. 为了不污染用户原有的书签结构，所有同步内容都收纳到目标根
- *     （书签栏 / 其他书签）下的一个独立子文件夹中，默认名 `Tab It`。
+ *     （书签栏 / 其他书签）下的一个独立子文件夹中，默认名 `Curio`。
  *  2. 镜像同步：
  *     - 优先用 Category.bookmarkId / BookmarkCard.bookmarkId 复用已有节点
  *       → 保留浏览器原生 `dateAdded` 等元信息，不会每次同步都重建
  *     - 复用失败（节点被用户手动删了）→ 按"同级同名/同 URL"二次匹配
  *     - 还是匹配不到 → 创建新节点
- *     - 完成后清理"挂在镜像目录下、但 Tab It 中已不存在"的多余节点
- *  3. 副产物：把新生成或复用的 bookmarkId 回写到 Tab It 内对应实体，
+ *     - 完成后清理"挂在镜像目录下、但 Curio 中已不存在"的多余节点
+ *  3. 副产物：把新生成或复用的 bookmarkId 回写到 Curio 内对应实体，
  *     调用方负责持久化（store 的 saveCategories / saveCards）。
  *  4. 失败兜底：浏览器若不支持 bookmarks API（极少见的环境）→ 抛错由 UI 提示。
  *     单条节点写入失败 → 记录到 errors，不中断整体流程。
@@ -28,7 +28,7 @@ export type BrowserSyncRoot = 'bookmarks_bar' | 'other'
 export interface ExportOptions {
   /** 目标根：'bookmarks_bar' 书签栏 / 'other' 其他书签 */
   root: BrowserSyncRoot
-  /** 镜像目录名（默认 'Tab It'）。在目标根下复用 / 创建该名字的文件夹。 */
+  /** 镜像目录名（默认 'Curio'）。在目标根下复用 / 创建该名字的文件夹。 */
   folderName: string
 }
 
@@ -44,9 +44,9 @@ export interface ExportResult {
   /** 单条节点失败的错误信息（不阻塞整体） */
   errors: string[]
   /**
-   * 需要持久化回 Tab It 数据的 bookmarkId 变更：
-   * - categoryIdToBookmarkId：键为 Tab It Category.id，值为浏览器原生 folder id
-   * - cardIdToBookmarkId    ：键为 Tab It BookmarkCard.id，值为浏览器原生 bookmark id
+   * 需要持久化回 Curio 数据的 bookmarkId 变更：
+   * - categoryIdToBookmarkId：键为 Curio Category.id，值为浏览器原生 folder id
+   * - cardIdToBookmarkId    ：键为 Curio BookmarkCard.id，值为浏览器原生 bookmark id
    * 调用方读到这两张表后，把没有变化的实体过滤掉，再批量 save 即可。
    */
   categoryIdToBookmarkId: Map<string, string>
@@ -86,14 +86,14 @@ export async function exportToBrowserBookmarks(
   }
 
   // 2) 在根目录下确保镜像文件夹存在
-  const folderName = options.folderName.trim() || 'Tab It'
+  const folderName = options.folderName.trim() || 'Curio'
   const mirrorFolderId = await ensureMirrorFolder(rootId, folderName)
 
   // 3) 按层级（parentId）排序 categories：父在前、子在后；同层按 order
   const sortedCategories = sortCategoriesTopDown(categories)
 
   // 4) 依次同步每个 category 对应的浏览器文件夹
-  //    映射：Tab It Category.id → 浏览器文件夹 id
+  //    映射：Curio Category.id → 浏览器文件夹 id
   const catFolderMap = new Map<string, string>()
   for (const cat of sortedCategories) {
     const parentBrowserId = cat.parentId
@@ -127,13 +127,13 @@ export async function exportToBrowserBookmarks(
     }
   }
 
-  // 6) 镜像清理：删除挂在镜像目录下、但不属于 Tab It 数据的节点
+  // 6) 镜像清理：删除挂在镜像目录下、但不属于 Curio 数据的节点
   const validBrowserIds = new Set<string>([
     mirrorFolderId,
     ...catFolderMap.values(),
     ...result.cardIdToBookmarkId.values(),
   ])
-  // 已经在浏览器侧存在、且被 Tab It 记录的旧 bookmarkId 也算合法
+  // 已经在浏览器侧存在、且被 Curio 记录的旧 bookmarkId 也算合法
   for (const cat of categories) {
     if (cat.bookmarkId) validBrowserIds.add(cat.bookmarkId)
   }

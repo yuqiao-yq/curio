@@ -476,7 +476,7 @@ function CrawlPrivacyDialog({
         </div>
         <div className="px-5 py-4 space-y-3 text-xs text-slate-600 dark:text-slate-300 leading-relaxed flex-1 min-h-0 overflow-y-auto">
           <p>
-            Tab It 即将代你访问已收藏的{' '}
+            Curio 即将代你访问已收藏的{' '}
             <span className="font-semibold text-brand tabular-nums">
               {pendingCount}
             </span>{' '}

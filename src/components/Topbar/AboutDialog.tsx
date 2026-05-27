@@ -9,13 +9,13 @@ import pkg from '../../../package.json'
 const UI_BUILD_TAG = 'v6-relative-paths'
 
 export function AboutDialog({ onClose }: { onClose: () => void }) {
-  const repoUrl = 'https://github.com/yuqiao-yq/tab-it'
+  const repoUrl = 'https://github.com/yuqiao-yq/curio'
   return (
     <DialogShell
       title={
         <span className="flex items-center gap-2">
           <span className="text-base">ℹ️</span>
-          <span>关于 Tab It</span>
+          <span>关于 Curio</span>
         </span>
       }
       width={440}
@@ -23,7 +23,7 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
     >
       <div className="space-y-4">
         <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-bold text-brand">Tab It</span>
+          <span className="text-2xl font-bold text-brand">Curio</span>
           <span className="text-sm text-slate-500 dark:text-slate-400 tabular-nums">
             v{pkg.version}
           </span>

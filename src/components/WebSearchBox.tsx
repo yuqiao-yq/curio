@@ -40,7 +40,7 @@ const ENGINES: Engine[] = [
   { id: 'duckduckgo', name: 'DuckDuckGo', homepage: 'https://duckduckgo.com',     searchUrl: 'https://duckduckgo.com/?q={q}' },
 ]
 
-const STORAGE_KEY = 'tabit:web-search-engine'
+const STORAGE_KEY = 'curio:web-search-engine'
 
 /**
  * v0.22.x 引导补充：placeholder 文案轮换。
@@ -146,7 +146,7 @@ function loadEngine(): Engine {
   }
 }
 
-const HISTORY_KEY = 'tabit:search-history'
+const HISTORY_KEY = 'curio:search-history'
 const HISTORY_MAX = 20
 
 function loadHistory(): string[] {

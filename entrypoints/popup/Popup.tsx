@@ -10,13 +10,14 @@ import type { Category } from '../../src/types/bookmark'
 import { getHostname } from '../../src/utils/favicon'
 import { cn } from '../../src/utils/cn'
 import { FaviconImg } from '../../src/components/FaviconImg'
+import { runLegacyMigrationOnce } from '../../src/services/legacyMigration'
 
 /**
  * 浏览器工具栏图标的 Popup。
  *
  * 两个主操作：
- *  1. 「打开 Tab It 新标签页」—— 打开一个新的 chrome://newtab
- *  2. 「添加当前页面」—— 把当前 active tab 的 title/url 加为 Tab It 书签
+ *  1. 「打开 Curio 新标签页」—— 打开一个新的 chrome://newtab
+ *  2. 「添加当前页面」—— 把当前 active tab 的 title/url 加为 Curio 书签
  *
  * V1.0 §4.3 增加 ✨ AI 建议（一次调用 LLM 同时给出分类 / 备注 / 标签建议）：
  *  - AI 未配置时按钮隐藏（保持 popup 干净）
@@ -96,8 +97,17 @@ export default function Popup() {
 
   // ─── 初始化：拉 store + AI settings + 当前 tab ───────────────
   useEffect(() => {
-    void init()
-    void aiInit()
+    // 老用户首次打开 popup 时，可能 background / newtab 都还没跑过迁移；
+    // 这里先 await 一次再 init，确保读到的是迁移后的 curio:* 数据。
+    void (async () => {
+      try {
+        await runLegacyMigrationOnce()
+      } catch {
+        /* 迁移失败不阻塞 popup 主流程 */
+      }
+      void init()
+      void aiInit()
+    })()
     void loadActiveTab().then((info) => {
       if (!info) return
       setTabInfo(info)
@@ -246,7 +256,7 @@ export default function Popup() {
       {/* ───── Header ───── */}
       <header className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-200 dark:border-slate-700 whitespace-nowrap">
         <span className="text-base font-semibold text-brand leading-none">
-          Tab It
+          Curio
         </span>
         <span className="text-[10px] text-slate-400 leading-none truncate">
           书签整理新标签页
@@ -265,7 +275,7 @@ export default function Popup() {
           )}
         >
           <span aria-hidden>＋</span>
-          打开 Tab It 新标签页
+          打开 Curio 新标签页
         </button>
       </div>
 
@@ -499,7 +509,7 @@ export default function Popup() {
                   ? '添加中…'
                   : submitState === 'saved'
                     ? '✓ 已添加'
-                    : '添加到 Tab It'}
+                    : '添加到 Curio'}
               </button>
             </div>
           </div>

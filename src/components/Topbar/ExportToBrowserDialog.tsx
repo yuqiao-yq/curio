@@ -6,7 +6,7 @@ import { DialogShell } from './DialogShell'
 /**
  * 同步到浏览器：参数确认弹窗。
  * - root         ：写到「书签栏」还是「其他书签」
- * - folderName   ：根文件夹名（默认 Tab It），避免污染用户已有书签
+ *  - folderName   ：根文件夹名（默认 Curio），避免污染用户已有书签
  * - 含一条强提醒：镜像模式 = 该文件夹内的多余项会被自动清理
  */
 export function ExportToBrowserDialog({
@@ -139,7 +139,7 @@ export function ExportToBrowserDialog({
             type="text"
             value={folderName}
             onChange={(e) => setFolderName(e.target.value)}
-            placeholder="Tab It"
+            placeholder="Curio"
             spellCheck={false}
             disabled={exporting}
             className={cn(
@@ -153,7 +153,7 @@ export function ExportToBrowserDialog({
             )}
           />
           <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
-            会在选定位置下复用 / 创建该文件夹，所有 Tab It 数据都收纳在其中，
+            会在选定位置下复用 / 创建该文件夹，所有 Curio 数据都收纳在其中，
             避免污染你原有的书签结构。
           </p>
         </section>
@@ -169,10 +169,10 @@ export function ExportToBrowserDialog({
         >
           <div className="font-medium mb-1">⚠ 镜像同步说明</div>
           <ul className="list-disc pl-4 space-y-0.5">
-            <li>同步方向为单向：Tab It → 浏览器（不读取浏览器侧的改动）</li>
+            <li>同步方向为单向：Curio → 浏览器（不读取浏览器侧的改动）</li>
             <li>
-              会保持「<span className="font-mono">{trimmed || 'Tab It'}</span>
-              」文件夹与 Tab It 数据完全一致：
+              会保持「<span className="font-mono">{trimmed || 'Curio'}</span>
+              」文件夹与 Curio 数据完全一致：
               <span className="font-medium">该文件夹下的多余项会被自动清理</span>
             </li>
             <li>不影响该文件夹之外的任何浏览器原有书签</li>

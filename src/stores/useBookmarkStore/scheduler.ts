@@ -116,7 +116,7 @@ async function runBrowserSyncExport() {
   try {
     await s.exportToBrowser({
       root: s.settings.browserSyncRoot ?? 'bookmarks_bar',
-      folderName: s.settings.browserSyncFolderName ?? 'Tab It',
+      folderName: s.settings.browserSyncFolderName ?? 'Curio',
     })
   } catch (err) {
     // 自动同步失败不弹 toast（用户没主动触发），仅日志，避免噪音

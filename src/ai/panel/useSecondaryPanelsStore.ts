@@ -15,7 +15,7 @@ import type { PanelPosition, PanelSize, SecondaryPanel } from '../types'
  * 主浮窗刷新后副浮窗能恢复（前提是被绑的 tab.id 还在主 store 里）。
  */
 
-const STORAGE_KEY = 'tabit:ai-secondary-panels'
+const STORAGE_KEY = 'curio:ai-secondary-panels'
 
 interface PersistedShape {
   panels: SecondaryPanel[]

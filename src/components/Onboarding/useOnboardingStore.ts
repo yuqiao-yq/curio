@@ -22,7 +22,7 @@ import { useAIPanelStore } from '../../ai/panel/usePanelStore'
  * - 主 Tour 运行态（tourActive / tourStepIndex）不持久化 —— 用户中途刷新就当跳过
  */
 
-const STORAGE_KEY = 'tabit:onboarding:v1'
+const STORAGE_KEY = 'curio:onboarding:v1'
 
 interface OnboardingPersisted {
   mainTourDone: boolean

@@ -40,7 +40,7 @@ class PageContentsDexie extends Dexie {
   pageContents!: Table<PageContentRow, string>
 
   constructor() {
-    super('tabit-pages')
+    super('curio-pages')
     this.version(1).stores({
       // 主键 bookmarkId；status 加索引便于"按状态过滤"
       pageContents: 'bookmarkId, status, fetchedAt',

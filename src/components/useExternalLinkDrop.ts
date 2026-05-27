@@ -11,7 +11,7 @@ import { toast } from '../stores/useToastStore'
  * - 同时挂监听不会让两套系统打架
  *
  * 触发场景：
- * - 从另一个 tab 拖一个 link / page favicon 到 Tab It → 自动添加书签
+ * - 从另一个 tab 拖一个 link / page favicon 到 Curio → 自动添加书签
  * - 从桌面 / Finder 拖一个 .url / .webloc 文件 → 解析 URL 后添加
  *
  * 目标分类判定（优先级从高到低）：

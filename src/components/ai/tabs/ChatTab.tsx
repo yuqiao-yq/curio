@@ -240,7 +240,7 @@ export function ChatTab({ tabId }: { tabId: string }) {
       return
     }
     const lines: string[] = []
-    lines.push(`# ${tab?.title ?? 'Tab It 对话'}`)
+    lines.push(`# ${tab?.title ?? 'Curio 对话'}`)
     lines.push('')
     lines.push(`> 导出于 ${new Date().toLocaleString()}`)
     lines.push('')
@@ -265,7 +265,7 @@ export function ChatTab({ tabId }: { tabId: string }) {
     const a = document.createElement('a')
     const safeTitle = (tab?.title ?? 'chat').replace(/[\\/:*?"<>|]/g, '_')
     a.href = url
-    a.download = `tabit-${safeTitle}-${new Date()
+    a.download = `curio-${safeTitle}-${new Date()
       .toISOString()
       .slice(0, 10)}.md`
     a.click()

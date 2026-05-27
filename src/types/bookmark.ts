@@ -113,7 +113,7 @@ export interface UserSettings {
    * 书签卡片 / 文件夹卡 / 历史卡 是否启用毛玻璃效果。
    * - true / undefined（默认）：半透明 + backdrop-blur，与自定义背景融合更优雅
    * - false：纯实色背景，无 backdrop 模糊，文字对比度更高、性能更好
-   * 通过 body 上的 `tabit-cards-solid` class 一处控制所有 .card 派生节点。
+   * 通过 body 上的 `curio-cards-solid` class 一处控制所有 .card 派生节点。
    */
   cardGlass?: boolean
 
@@ -125,7 +125,7 @@ export interface UserSettings {
    */
   browserSyncRoot?: 'bookmarks_bar' | 'other'
   /**
-   * 同步到浏览器时使用的根文件夹名（默认 'Tab It'）。
+   * 同步到浏览器时使用的根文件夹名（默认 'Curio'）。
    * 在 browserSyncRoot 下复用 / 创建该名称的文件夹，作为本扩展的镜像目录,
    * 避免污染用户原有的书签结构。
    */

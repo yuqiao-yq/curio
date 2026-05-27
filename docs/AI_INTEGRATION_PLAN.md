@@ -1,4 +1,4 @@
-# Tab It - AI 接入开发计划
+# Curio - AI 接入开发计划
 
 > 本文档是 [`ROADMAP.md`](./ROADMAP.md) 中 V3.0 「AI 自动分类」「智能去重」等条目的展开版，
 > 覆盖完整的 AI 能力规划、技术架构、隐私与成本设计，以及可勾选的实施 checklist。
@@ -195,7 +195,7 @@ src/components/ai/
 
 #### 用户故事
 > 作为用户，我希望能填入自己的 OpenAI 兼容服务（DeepSeek / 智谱 / 自部署 Ollama 等），
-> 让 Tab It 用我自己的额度跑 AI 功能。
+> 让 Curio 用我自己的额度跑 AI 功能。
 
 #### 验收标准
 - [ ] 浮窗「⚙ 设置」Tab 实现 Provider 配置 UI
@@ -450,7 +450,7 @@ src/components/ai/
 **优先级**：P0  ·  **工期**：5-7 天  ·  **依赖**：4.1
 
 #### 用户故事
-> 我希望 Tab It 能后台为我收藏过的网页保存正文摘要，
+> 我希望 Curio 能后台为我收藏过的网页保存正文摘要，
 > 这样我能问 "上周看的 React 文章里谁推荐了 useReducer？"
 
 #### 验收标准
@@ -478,7 +478,7 @@ src/components/ai/
 - [x] manifest host_permissions 调整 + 升级提示
 - [x] Readability.js 集成（`@mozilla/readability` 0.6.0）
 - [x] crawler service（带并发 worker pool + 单条 abortController + 立即落库）
-- [x] pageContents IndexedDB table（独立 dexie db `tabit-pages`）
+- [x] pageContents IndexedDB table（独立 dexie db `curio-pages`）
 - [x] 抓取进度页（SettingsTab > 内容抓取 section）
 - [x] 卡片角标显示索引状态（usePageIndex store + 📄 角标）
 
@@ -568,7 +568,7 @@ src/components/ai/
 **优先级**：P0  ·  **工期**：5-7 天  ·  **依赖**：所有 V1 能力
 
 #### 用户故事
-> 我希望在 Cursor / Raycast / Alfred 里直接搜我的 Tab It 书签
+> 我希望在 Cursor / Raycast / Alfred 里直接搜我的 Curio 书签
 
 #### 技术方案
 - 浏览器扩展不能直接开 HTTP server
@@ -612,7 +612,7 @@ GET  /v1/chat?q=xxx              RAG 问答（SSE 流式）
 
 - [x] AIPanelTabs 加「⤴ 分离」按钮（hover 出现，仅未分离时显示）
 - [x] z-index 自动管理：focusPanel(panelId) bump 到 zCounter+1，焦点浮窗自动置顶
-- [x] 多浮窗位置 / 尺寸独立持久化（独立 storage key `tabit:ai-secondary-panels`，
+- [x] 多浮窗位置 / 尺寸独立持久化（独立 storage key `curio:ai-secondary-panels`，
   debounce 200ms）
 - [x] 已分离 tab 在主 tab bar 上显示 ⤴ 标记 + tooltip"已在副浮窗显示"，
   作为"任务栏"作用 —— 不另设全局任务栏，避免视觉冗余
@@ -808,7 +808,7 @@ export const usageTracker = {
 
 ```
 ┌───────────────────────────────────────────────┐
-│  Tab It 主区（不被任何 AI UI 遮挡或挤压）      │
+│  Curio 主区（不被任何 AI UI 遮挡或挤压）      │
 │                                                │
 │  ┌─────────────┬───────────────────────┐      │
 │  │             │                       │      │

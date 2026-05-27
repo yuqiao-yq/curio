@@ -88,7 +88,7 @@ export function Topbar() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `tab-it-export-${new Date().toISOString().slice(0, 10)}.json`
+      a.download = `curio-export-${new Date().toISOString().slice(0, 10)}.json`
       a.click()
       URL.revokeObjectURL(url)
       const cnt = (data.categories?.length ?? 0) + (data.cards?.length ?? 0)
@@ -177,7 +177,7 @@ export function Topbar() {
       if (total === 0) {
         toast.info(
           '未发现新书签',
-          '当前浏览器书签都已存在于 Tab It 中，无新增',
+          '当前浏览器书签都已存在于 Curio 中，无新增',
         )
         return
       }
@@ -207,7 +207,7 @@ export function Topbar() {
 
   /**
    * 「同步到浏览器书签」执行入口：用户在子弹窗确认参数后调用。
-   * - 镜像模式：在选定根目录下的 folderName 文件夹内重建 Tab It 结构
+   * - 镜像模式：在选定根目录下的 folderName 文件夹内重建 Curio 结构
    * - 完成后给出新增 / 更新 / 清理 三段式 toast 反馈
    */
   const handleExportToBrowser = async (params: {
@@ -234,7 +234,7 @@ export function Topbar() {
       } else if (created === 0 && result.nodesUpdated === 0 && result.nodesRemoved === 0) {
         toast.info(
           '浏览器书签已是最新',
-          `镜像目录「${params.folderName}」与 Tab It 一致，无需变更`,
+          `镜像目录「${params.folderName}」与 Curio 一致，无需变更`,
         )
       } else {
         toast.success('已同步到浏览器书签', detail)
@@ -267,7 +267,7 @@ export function Topbar() {
         'border-b border-slate-200/70 dark:border-slate-700/70'
       }
     >
-      <h1 className="text-sm font-semibold text-brand/70 hover:text-brand transition-colors leading-none tracking-tight">Tab It</h1>
+      <h1 className="text-sm font-semibold text-brand/70 hover:text-brand transition-colors leading-none tracking-tight">Curio</h1>
       {/* 中央：网页搜索框（替代被覆盖的浏览器地址栏，支持切换搜索引擎） */}
       <div className="justify-self-center w-full max-w-[540px]">
         <WebSearchBox />
@@ -315,7 +315,7 @@ export function Topbar() {
             },
             {
               key: 'about',
-              label: '关于 Tab It',
+              label: '关于 Curio',
               icon: <InfoIcon />,
               onSelect: () => setAboutDialogOpen(true),
             },
@@ -365,7 +365,7 @@ export function Topbar() {
         createPortal(
           <ExportToBrowserDialog
             defaultRoot={settings.browserSyncRoot ?? 'bookmarks_bar'}
-            defaultFolderName={settings.browserSyncFolderName ?? 'Tab It'}
+            defaultFolderName={settings.browserSyncFolderName ?? 'Curio'}
             exporting={exporting}
             onCancel={() => !exporting && setExportDialogOpen(false)}
             onConfirm={handleExportToBrowser}

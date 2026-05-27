@@ -5,10 +5,10 @@ import type { RecentRepository } from './types'
 
 /**
  * browser.storage.local 中存放「最近使用」相关数据的 key。
- * 与 LocalRepository 的 KEYS 平级、命名空间一致（tabit: 前缀）。
+ * 与 LocalRepository 的 KEYS 平级、命名空间一致（curio: 前缀）。
  */
-export const RECENT_ENTRIES_KEY = 'tabit:recent'
-export const RECENT_LIMIT_KEY = 'tabit:recentLimit'
+export const RECENT_ENTRIES_KEY = 'curio:recent'
+export const RECENT_LIMIT_KEY = 'curio:recentLimit'
 
 /**
  * 基于 browser.storage.local 的「最近使用」实现。

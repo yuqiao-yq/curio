@@ -9,7 +9,7 @@ import { cn } from '../utils/cn'
  *
  * 设计目标：
  * - API 像原生 confirm/prompt 一样简单（async/await）
- * - 视觉与 Tab It 整体一致（已有 Topbar.DialogShell 同款）
+ * - 视觉与 Curio 整体一致（已有 Topbar.DialogShell 同款）
  * - 支持暗色 / 浅色主题
  * - portal 挂 body，z-index 高于 toast(10000) / 浮窗(10100)，与隐私同意弹窗(10200) 并列
  * - Esc / 点击遮罩 = 取消；Enter = 确认（prompt 在输入框，confirm 在按钮）

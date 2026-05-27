@@ -13,9 +13,9 @@ import type {
 } from './types'
 
 const KEYS = {
-  categories: 'tabit:categories',
-  cards: 'tabit:cards',
-  settings: 'tabit:settings',
+  categories: 'curio:categories',
+  cards: 'curio:cards',
+  settings: 'curio:settings',
 } as const
 
 /**

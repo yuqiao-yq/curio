@@ -107,7 +107,7 @@ log "bump package.json version → $PLAIN_VER ..."
 # 失败回滚：保存原始内容到临时文件，trap 在异常时还原
 # 简单拼接路径：不走 mktemp / 命令替换，避免 set -u + 子 shell 的边界 bug
 # 仅用于当前进程，PID 保证唯一，TMPDIR 有默认值
-PKG_BACKUP="${TMPDIR:-/tmp}/tabit-pkg-backup-$$.json"
+PKG_BACKUP="${TMPDIR:-/tmp}/curio-pkg-backup-$$.json"
 cp package.json "$PKG_BACKUP"
 restore_pkg() {
   if [[ -f "$PKG_BACKUP" ]]; then
@@ -127,7 +127,7 @@ node -e '
 ok "package.json version = $PLAIN_VER"
 
 # ─── pnpm build 验证 ──────────────────────────────
-BUILD_LOG="${TMPDIR:-/tmp}/tabit-build-log-$$.log"
+BUILD_LOG="${TMPDIR:-/tmp}/curio-build-log-$$.log"
 log "pnpm build 验证（日志：${BUILD_LOG}）..."
 if ! pnpm build >"$BUILD_LOG" 2>&1; then
   tail -30 "$BUILD_LOG"

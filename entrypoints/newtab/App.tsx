@@ -26,6 +26,7 @@ import { useOrganizeStore } from '../../src/ai/services/useOrganizeStore'
 import { usePageIndex } from '../../src/ai/services/usePageIndex'
 import { Onboarding, useOnboardingStore } from '../../src/components/Onboarding'
 import { useExternalLinkDrop } from '../../src/components/useExternalLinkDrop'
+import { runLegacyMigrationOnce } from '../../src/services/legacyMigration'
 
 /**
  * v0.21.x：AI 浮窗与副浮窗按需加载。
@@ -86,15 +87,25 @@ export default function App() {
   const startMainTour = useOnboardingStore((s) => s.startMainTour)
 
   useEffect(() => {
-    void init()
-    void initPanel()
-    void initAISettings()
-    // §7.3 副浮窗状态恢复
-    void initSecondaryPanels()
-    // 启动时拉一次「已抓取的 bookmarkId」集合，给卡片角标用（§6.1）
-    void refreshPageIndex()
-    // v0.22.x 首次引导：先 init 恢复标记，下面的 useEffect 据此决定要不要启动
-    void initOnboarding()
+    // 一次性数据迁移（tabit → curio 命名空间）必须在任何 store init 之前完成，
+    // 否则 init 会读到空数据并触发"老用户首次进入"的引导，造成误导。
+    // background.ts 也会在 service worker 启动时调一次；这里做防御性兜底。
+    void (async () => {
+      try {
+        await runLegacyMigrationOnce()
+      } catch {
+        // 迁移失败不阻塞 UI 启动；下次进入会再次尝试
+      }
+      void init()
+      void initPanel()
+      void initAISettings()
+      // §7.3 副浮窗状态恢复
+      void initSecondaryPanels()
+      // 启动时拉一次「已抓取的 bookmarkId」集合，给卡片角标用（§6.1）
+      void refreshPageIndex()
+      // v0.22.x 首次引导：先 init 恢复标记，下面的 useEffect 据此决定要不要启动
+      void initOnboarding()
+    })()
   }, [
     init,
     initPanel,
@@ -274,15 +285,15 @@ export default function App() {
 
   // ─── 书签卡片毛玻璃开关 ───────────────────────────
   // 默认（cardGlass === undefined / true）保留毛玻璃；显式关闭时给 body
-  // 加 .tabit-cards-solid，由 global.css 的级联选择器把所有 .card 切到实色。
+  // 加 .curio-cards-solid，由 global.css 的级联选择器把所有 .card 切到实色。
   // 单一 class 控制，所有用 .card 的派生节点（书签 / 文件夹 / 历史 / + 占位 / DragPreview）
   // 同步生效，不需要逐个组件传 prop。
   useEffect(() => {
     const off = cardGlass === false
-    document.body.classList.toggle('tabit-cards-solid', off)
+    document.body.classList.toggle('curio-cards-solid', off)
     return () => {
       // 组件卸载时清理，避免遗留 class
-      document.body.classList.remove('tabit-cards-solid')
+      document.body.classList.remove('curio-cards-solid')
     }
   }, [cardGlass])
 
@@ -449,7 +460,7 @@ function EmptyState({
   return (
     <div className="max-w-md mx-auto mt-20 text-center space-y-6">
       <div className="text-6xl">🗂️</div>
-      <h2 className="text-2xl font-semibold">欢迎使用 Tab It</h2>
+      <h2 className="text-2xl font-semibold">欢迎使用 Curio</h2>
       <p className="text-slate-500">选择一种方式开始整理你的书签</p>
       <div className="flex flex-col gap-3">
         <button onClick={onImport} disabled={loading} className="btn-primary py-3">

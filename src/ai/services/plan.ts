@@ -15,7 +15,7 @@ import type { BookmarkCard, Category, ExportData } from '../../types/bookmark'
  *
  * 应用流程：
  *   1. 调 repository.bulkExport() 拿到全量 snapshot，写入 chrome.storage.local
- *      key 为 `tabit:undo-snapshot`（覆盖式，仅保留最新一次）
+ *      key 为 `curio:undo-snapshot`（覆盖式，仅保留最新一次）
  *   2. 计算「最终要执行的操作」：根据 review 过滤 plan
  *   3. 创建被接受的 newCategories（生成真实 uuid，记录 tempId → realId 映射）
  *   4. 移动书签（更新 categoryId，重排 order）
@@ -29,7 +29,7 @@ import type { BookmarkCard, Category, ExportData } from '../../types/bookmark'
  *   4. 删除 snapshot
  */
 
-const SNAPSHOT_KEY = 'tabit:undo-snapshot'
+const SNAPSHOT_KEY = 'curio:undo-snapshot'
 
 interface UndoSnapshot {
   planId: string
