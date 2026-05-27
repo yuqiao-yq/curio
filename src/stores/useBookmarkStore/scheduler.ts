@@ -72,6 +72,10 @@ export function scheduleBookmarksSyncPush() {
     const s = useBookmarkStore.getState()
     void syncPushBookmarks(s.categories, s.cards)
   }, BOOKMARKS_SYNC_PUSH_DEBOUNCE_MS)
+  // v0.22.x：同一汇聚点顺手调度浏览器书签自动镜像（仅当开关开启）。
+  // 复用所有 slice 已存在的 21 处 scheduleBookmarksSyncPush 调用，
+  // 业务侧不用任何改动就拿到了"数据变更 → 自动同步浏览器书签"的能力。
+  scheduleBrowserSyncExport()
 }
 
 function flushBookmarksSyncPush() {
@@ -82,12 +86,65 @@ function flushBookmarksSyncPush() {
   void syncPushBookmarks(s.categories, s.cards)
 }
 
+// ─── 浏览器书签自动镜像（v0.22.x） ─────────────────────────
+let browserSyncExportTimer: ReturnType<typeof setTimeout> | null = null
+// 比 chrome.storage.sync 慢一档：浏览器书签 API 写入更"重"（每个 node 都是
+// 单独 IPC），3 秒让连续操作合并成一次镜像
+const BROWSER_SYNC_EXPORT_DEBOUNCE_MS = 3000
+
+/**
+ * 调度一次自动镜像到浏览器原生书签。
+ * - 仅当 settings.browserSyncAuto === true 时才真正排定 timer
+ * - 在 debounce 内多次调用会合并为一次
+ * - exportToBrowser 自身会回写 bookmarkId 触发 scheduleBookmarksSyncPush，
+ *   但第二次跑时 diff 已经收敛（bookmarkId 都 matched），不会无限循环
+ */
+export function scheduleBrowserSyncExport() {
+  const s = useBookmarkStore.getState()
+  if (!s.settings.browserSyncAuto) return
+  if (browserSyncExportTimer) clearTimeout(browserSyncExportTimer)
+  browserSyncExportTimer = setTimeout(() => {
+    browserSyncExportTimer = null
+    void runBrowserSyncExport()
+  }, BROWSER_SYNC_EXPORT_DEBOUNCE_MS)
+}
+
+async function runBrowserSyncExport() {
+  const s = useBookmarkStore.getState()
+  // 二次确认：debounce 期间用户可能关掉了开关
+  if (!s.settings.browserSyncAuto) return
+  try {
+    await s.exportToBrowser({
+      root: s.settings.browserSyncRoot ?? 'bookmarks_bar',
+      folderName: s.settings.browserSyncFolderName ?? 'Tab It',
+    })
+  } catch (err) {
+    // 自动同步失败不弹 toast（用户没主动触发），仅日志，避免噪音
+    console.warn('[browserSyncAuto] export failed:', err)
+  }
+}
+
+function flushBrowserSyncExport() {
+  if (!browserSyncExportTimer) return
+  clearTimeout(browserSyncExportTimer)
+  browserSyncExportTimer = null
+  void runBrowserSyncExport()
+}
+
 // ─── 公开 flush / cancel API ───────────────────────────────
 
 /** 暴露给外部按需主动 flush 两条推送管线 */
 export function flushPendingSyncPush() {
   flushSettingsSyncPush()
   flushBookmarksSyncPush()
+}
+
+/** 单独暴露：开关从开 → 关时调一次，防止挂起的 timer 还会跑一次镜像 */
+export function cancelPendingBrowserSyncExport() {
+  if (browserSyncExportTimer) {
+    clearTimeout(browserSyncExportTimer)
+    browserSyncExportTimer = null
+  }
 }
 
 /**
@@ -118,12 +175,14 @@ export function installFlushHandlers() {
     flushSettingsSave()
     flushSettingsSyncPush()
     flushBookmarksSyncPush()
+    flushBrowserSyncExport()
   })
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       flushSettingsSave()
       flushSettingsSyncPush()
       flushBookmarksSyncPush()
+      flushBrowserSyncExport()
     }
   })
 }

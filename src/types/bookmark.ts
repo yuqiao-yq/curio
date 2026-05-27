@@ -126,10 +126,21 @@ export interface UserSettings {
   browserSyncRoot?: 'bookmarks_bar' | 'other'
   /**
    * 同步到浏览器时使用的根文件夹名（默认 'Tab It'）。
-   * 在 browserSyncRoot 下复用 / 创建该名称的文件夹，作为本扩展的镜像目录，
+   * 在 browserSyncRoot 下复用 / 创建该名称的文件夹，作为本扩展的镜像目录,
    * 避免污染用户原有的书签结构。
    */
   browserSyncFolderName?: string
+  /**
+   * 数据变更后自动同步到浏览器书签（v0.22.x）。
+   * - false（默认）：完全手动，用户在「数据管理 → 同步到浏览器书签」点按钮才同步
+   * - true：每次书签数据变更（含 add/update/move/delete/标签/整理）后 3s debounce
+   *   自动镜像。失败静默 log，不弹 toast 打扰
+   *
+   * 与 browserSyncRoot / browserSyncFolderName 一样视为「本机偏好」：
+   * 不进 SYNCABLE_SETTINGS_KEYS 白名单，多设备独立配置
+   * （A 设备可开自动同步、B 设备保持手动，互不干扰）。
+   */
+  browserSyncAuto?: boolean
 }
 
 /** 左侧分类栏宽度边界（与 CategorySidebar 中的拖拽限制保持一致） */
