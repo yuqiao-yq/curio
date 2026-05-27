@@ -42,6 +42,19 @@ const ENGINES: Engine[] = [
 
 const STORAGE_KEY = 'tabit:web-search-engine'
 
+/**
+ * v0.22.x 引导补充：placeholder 文案轮换。
+ * 仅在「展开 + 未 focus + raw 为空」时切换，避免打断用户输入。
+ * 4 秒一轮，循环展示，让用户被动发现隐藏入口（@ai / #tag / ⌘J）。
+ */
+const PLACEHOLDER_HINTS = [
+  '搜索书签、输入网址，或使用 @web / #标签 / @ai',
+  '试试 @ai 那篇讲 React 性能的',
+  '试试 #工具 按标签筛选',
+  '按 ⌘J / Ctrl+J 唤起 AI 助手',
+] as const
+const PLACEHOLDER_ROTATE_MS = 4000
+
 /** 前缀解析：把 raw 拆成「模式 + 实际查询词」 */
 type Mode = 'auto' | 'web' | 'local' | 'tag' | 'ai'
 function parseQuery(raw: string): { mode: Mode; q: string } {
@@ -193,6 +206,18 @@ export function WebSearchBox() {
    * 用 max-width 而非 width 做过渡，避免 flex 父容器抢回宽度造成跳变。
    */
   const expanded = hovered || focused || raw.length > 0 || open
+
+  // placeholder 轮换索引：仅在空闲态（展开但未 focus 也无输入）时推进
+  const [phIndex, setPhIndex] = useState(0)
+  const placeholderIdle = expanded && !focused && raw.length === 0
+  useEffect(() => {
+    if (!placeholderIdle) return
+    const t = setInterval(
+      () => setPhIndex((i) => (i + 1) % PLACEHOLDER_HINTS.length),
+      PLACEHOLDER_ROTATE_MS,
+    )
+    return () => clearInterval(t)
+  }, [placeholderIdle])
 
   // 本地搜索：把"实际查询词"同步到 store（@web 模式时清掉，避免主区被误切到搜索视图）
   const cards = useBookmarkStore((s) => s.cards)
@@ -414,6 +439,7 @@ export function WebSearchBox() {
   return (
     <div
       ref={wrapRef}
+      data-tour="search-box"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className={cn(
@@ -481,7 +507,7 @@ export function WebSearchBox() {
             if (e.key === 'Enter') submit()
             if (e.key === 'Escape') setRaw('')
           }}
-          placeholder={expanded ? '搜索书签、输入网址，或使用 @web / #标签 / @ai' : '搜索'}
+          placeholder={expanded ? PLACEHOLDER_HINTS[phIndex] : '搜索'}
           className={cn(
             'flex-1 min-w-0 h-full px-2 text-[15px] bg-transparent outline-none',
             'placeholder:text-slate-400',

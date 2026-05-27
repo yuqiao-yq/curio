@@ -73,3 +73,13 @@ export function GearIcon() {
     </svg>
   )
 }
+
+/** 罗盘 / 指南针风格 icon：用于齿轮菜单里「重新引导」项 */
+export function CompassIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="9" />
+      <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+    </svg>
+  )
+}

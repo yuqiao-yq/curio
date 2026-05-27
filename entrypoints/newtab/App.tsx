@@ -24,6 +24,7 @@ import { useAISettingsStore } from '../../src/ai/useAISettingsStore'
 import { usePassiveSuggest } from '../../src/ai/services/usePassiveSuggest'
 import { useOrganizeStore } from '../../src/ai/services/useOrganizeStore'
 import { usePageIndex } from '../../src/ai/services/usePageIndex'
+import { Onboarding, useOnboardingStore } from '../../src/components/Onboarding'
 
 /**
  * v0.21.x：AI 浮窗与副浮窗按需加载。
@@ -74,6 +75,15 @@ export default function App() {
   const { shouldShow: hasPassiveHint, dismiss: dismissPassive } =
     usePassiveSuggest()
 
+  // ─── 首次进入引导（v0.22.x）─────────────────────────
+  // - init() 从 chrome.storage.local 恢复已完成的引导标记
+  // - hydrated + 未引导过 → startMainTour() 自动启动 L1 5 步 Spotlight
+  // - L1.5 渐进式提示由 <Onboarding /> 自己监听数据触发
+  const initOnboarding = useOnboardingStore((s) => s.init)
+  const onboardingHydrated = useOnboardingStore((s) => s.hydrated)
+  const mainTourDone = useOnboardingStore((s) => s.mainTourDone)
+  const startMainTour = useOnboardingStore((s) => s.startMainTour)
+
   useEffect(() => {
     void init()
     void initPanel()
@@ -82,7 +92,27 @@ export default function App() {
     void initSecondaryPanels()
     // 启动时拉一次「已抓取的 bookmarkId」集合，给卡片角标用（§6.1）
     void refreshPageIndex()
-  }, [init, initPanel, initAISettings, initSecondaryPanels, refreshPageIndex])
+    // v0.22.x 首次引导：先 init 恢复标记，下面的 useEffect 据此决定要不要启动
+    void initOnboarding()
+  }, [
+    init,
+    initPanel,
+    initAISettings,
+    initSecondaryPanels,
+    refreshPageIndex,
+    initOnboarding,
+  ])
+
+  // 引导启动决策：等三件事都到位
+  //   1. onboardingHydrated：持久化标记已恢复（避免覆盖老用户的"已引导"状态）
+  //   2. initialized：书签 store 已加载完，UI 锚点（Topbar / Sidebar）就绪
+  //   3. !mainTourDone：用户还没走过 / 没跳过引导
+  useEffect(() => {
+    if (!onboardingHydrated || !initialized || mainTourDone) return
+    // 延迟 400ms 让首屏过渡动画走完，避免 spotlight 高亮还在抖
+    const t = setTimeout(() => startMainTour(), 400)
+    return () => clearTimeout(t)
+  }, [onboardingHydrated, initialized, mainTourDone, startMainTour])
 
   // Cmd/Ctrl + J 全局快捷键唤起 / 隐藏浮窗（与 Notion AI 对齐）
   useEffect(() => {
@@ -93,6 +123,9 @@ export default function App() {
         // 输入框聚焦时不抢，避免影响搜索
         const tag = (e.target as HTMLElement)?.tagName?.toLowerCase()
         if (tag === 'input' || tag === 'textarea') return
+        // 首次引导进行中：拦截 ⌘J 防止唤起浮窗导致 AIFAB 锚点丢失
+        // （AIFAB 在 visible=true 时返回 null，Tour 第 5 步会找不到锚点）
+        if (useOnboardingStore.getState().tourActive) return
         e.preventDefault()
         togglePanel()
       }
@@ -281,6 +314,9 @@ export default function App() {
       <ToastContainer />
       {/* 全局 confirm/prompt 替代浏览器原生弹窗（v0.20.1+） */}
       <DialogHost />
+      {/* v0.22.x 首次进入引导：L1 主 Tour + L1.5 渐进式提示。
+          内部自己读 onboardingStore 决定是否渲染，无需外层条件 */}
+      <Onboarding />
       {/* AI 浮窗与 FAB 两者互斥：浮窗显示时 FAB 隐藏（在 AIFAB 内部判断） */}
       <AIFAB
         hasNew={hasPassiveHint}

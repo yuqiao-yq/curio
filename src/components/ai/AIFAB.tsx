@@ -49,6 +49,7 @@ export function AIFAB({
   return createPortal(
     <button
       type="button"
+      data-tour="ai-fab"
       onClick={() => {
         // 优先级：被动建议 > 未配置引导 > 默认打开
         if (hasNew && onSuggestClick) {

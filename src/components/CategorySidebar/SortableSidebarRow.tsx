@@ -123,7 +123,12 @@ export function SortableSidebarRow(props: RowProps) {
   const stop = (e: React.SyntheticEvent) => e.stopPropagation()
 
   return (
-    <div ref={setNodeRef} style={style} className="relative">
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="relative"
+      data-tour="sidebar-category-row"
+    >
       {/* 拖拽放置指示线：before / after */}
       {dropIndicator === 'before' && (
         <div className="pointer-events-none absolute -top-px left-1 right-1 h-[2px] bg-brand rounded-full z-10" />

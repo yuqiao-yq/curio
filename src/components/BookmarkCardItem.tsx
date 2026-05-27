@@ -289,6 +289,7 @@ function BookmarkCardItemImpl({
       // 用 elementsFromPoint 反查鼠标下方的 drop target；自己被拖时通过 matches
       // activeSelector 跳过。
       data-dnd-card={card.id}
+      data-tour="bookmark-card-any"
       onClick={(e) => {
         if (editing) return
         if (e.defaultPrevented) return
@@ -834,6 +835,7 @@ function CompactBookmarkCard({
       style={style}
       {...dragProps}
       data-dnd-card={card.id}
+      data-tour="bookmark-card-any"
       onClick={onClick}
       className={cn(
         'group/compact select-none cursor-pointer',

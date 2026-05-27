@@ -13,11 +13,13 @@ import { cn } from '../../utils/cn'
 import { WebSearchBox } from '../WebSearchBox'
 import { CardMenu } from '../CardMenu'
 import { HelpDialog } from '../HelpDialog'
+import { confirmDialog } from '../Dialog'
 // docs/USER_GUIDE.md 是用户文档的唯一来源，弹窗内容由它驱动
 // （Vite 的 ?raw 后缀会把文件以纯字符串形式 import 进来）
 import userGuideMd from '../../../docs/USER_GUIDE.md?raw'
 
-import { DatabaseIcon, PaletteIcon, InfoIcon, HelpIcon, GearIcon } from './icons'
+import { DatabaseIcon, PaletteIcon, InfoIcon, HelpIcon, GearIcon, CompassIcon } from './icons'
+import { useOnboardingStore } from '../Onboarding'
 import { AboutDialog } from './AboutDialog'
 import { DataDialog } from './DataDialog'
 import { ExportToBrowserDialog } from './ExportToBrowserDialog'
@@ -58,6 +60,24 @@ export function Topbar() {
   // 同步到浏览器：确认弹窗 + 进度态
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
+
+  // v0.22.x：「重新引导」入口 —— 走完 / 跳过引导后想再看一次的兜底
+  const resetOnboarding = useOnboardingStore((s) => s.resetAll)
+  const startMainTour = useOnboardingStore((s) => s.startMainTour)
+  const handleRestartTour = async () => {
+    // 先 confirm 防误点：菜单这种轻量入口很容易手抖
+    const ok = await confirmDialog({
+      title: '重新走一遍引导？',
+      message: '会重新弹出 5 步 Spotlight 教学，可随时跳过。',
+      confirmText: '开始',
+    })
+    if (!ok) return
+    // resetAll 把 mainTourDone 等持久化标记清掉，startMainTour 立刻拉起 L1 Tour
+    // L1.5 hint 也跟着重置；但由于其 0→1 触发条件，已有数据的用户重置后
+    // 不会再被 L1.5 打扰（这是符合预期的行为：只回放主 Tour）
+    await resetOnboarding()
+    startMainTour()
+  }
 
   const handleExport = async () => {
     try {
@@ -256,6 +276,7 @@ export function Topbar() {
         {/* 帮助文档 → 弹出使用文档弹窗（位于齿轮左侧，与齿轮同尺寸 9×9） */}
         <button
           type="button"
+          data-tour="topbar-help"
           onClick={() => setHelpDialogOpen(true)}
           className={cn(
             'w-9 h-9 flex items-center justify-center rounded-md',
@@ -287,6 +308,12 @@ export function Topbar() {
               onSelect: () => setStyleDialogOpen(true),
             },
             {
+              key: 'restart-tour',
+              label: '重新引导',
+              icon: <CompassIcon />,
+              onSelect: () => void handleRestartTour(),
+            },
+            {
               key: 'about',
               label: '关于 Tab It',
               icon: <InfoIcon />,
@@ -296,6 +323,7 @@ export function Topbar() {
           trigger={(toggle, isOpen) => (
             <button
               type="button"
+              data-tour="topbar-settings"
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()

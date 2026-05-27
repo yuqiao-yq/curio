@@ -340,7 +340,7 @@ export function CategorySidebar() {
                 <CategoriesIcon />
                 <span className="sr-only">分类</span>
               </h2>
-              <div className="flex items-center gap-0.5">
+              <div className="flex items-center gap-0.5" data-tour="sidebar-toolbar">
                 <button
                   onClick={() => {
                     if (allExpanded) collapseAll()
