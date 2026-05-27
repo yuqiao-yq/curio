@@ -19,8 +19,6 @@
       在 scheduleBookmarksSyncPush 同一汇聚点追加 scheduleBrowserSyncExport，
       复用所有 21 处书签数据变更入口；3s debounce 合并连续操作；
       失败静默 log 不弹 toast；与 storage.sync push 双 timer 互不干扰）
-- [ ] 合并模式：保留镜像根文件夹下用户额外加的书签，不做"多余项清理"
-- [ ] 双向同步：监听 `browser.bookmarks.onCreated / onChanged / onMoved / onRemoved`，把浏览器侧的改动反向同步回 Tab It
 - [ ] 同步进度条 / 节点级别的详细日志（当前只有 toast 汇总）
 
 ### 样式

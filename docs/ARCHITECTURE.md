@@ -114,14 +114,35 @@ interface BookmarkCard {
   updatedAt: number
 }
 
-// 用户设置
+// 用户设置（实际字段见 src/types/bookmark.ts:51）
 interface UserSettings {
+  // ── 主题与本地化 ──
   theme: 'light' | 'dark' | 'auto'
   layout: 'grid' | 'list'
-  cardSize: 'sm' | 'md' | 'lg'
-  wallpaper?: string
   language: 'zh-CN' | 'en'
-  syncProvider?: 'local' | 'drive' | 'supabase'
+
+  // ── 卡片尺寸（v0.21.19 起从 sm/md/lg 改成 compact/standard/large） ──
+  cardSize: 'compact' | 'standard' | 'large'
+  cardIconSize?: 'small' | 'standard'
+  cardGlass?: boolean              // 卡片毛玻璃开关（v0.21.18+）
+
+  // ── 视觉自定义 ──
+  wallpaper?: string               // 6 预设 / 渐变 / URL / base64 上传
+  fontColor?: string               // hex；覆盖未单独设色的文字
+  backgroundBlur?: number          // 背景毛玻璃强度 px
+
+  // ── 布局偏好 ──
+  sidebarWidth?: number
+  subSectionDefaultExpanded?: boolean
+  recentIncludeBrowserHistory?: boolean
+
+  // ── 浏览器书签镜像（本机偏好，不进 sync 白名单） ──
+  browserSyncRoot?: 'bookmarks_bar' | 'other'
+  browserSyncFolderName?: string
+  browserSyncAuto?: boolean        // v0.22.x+ 数据变更后自动镜像
+
+  // ── 预留字段（V2 云同步） ──
+  syncProvider: 'local' | 'drive' | 'supabase'  // 当前未启用
 }
 ```
 
@@ -305,19 +326,23 @@ interface SyncMeta {
 
 ```
 tab-it/
-├── docs/                    # 设计文档
+├── docs/                    # 设计文档（ARCHITECTURE / ROADMAP / USER_GUIDE / AI_INTEGRATION_PLAN）
 ├── entrypoints/             # WXT 入口
 │   ├── newtab/              # 新标签页（主界面）
 │   ├── background.ts        # Service Worker
-│   ├── popup/               # 扩展图标弹出（可选）
-│   └── options/             # 设置页（可选）
+│   └── popup/               # 扩展图标弹出小窗
 ├── src/
+│   ├── ai/                  # AI 子系统（panel / providers / services / 类型）
 │   ├── components/          # UI 组件
+│   │   ├── ai/              # AI 浮窗 + 各 Tab（chat / organize / labels / settings）
+│   │   ├── CategorySidebar/ # 左侧分类栏（v0.21.x 拆 4 个 hook）
+│   │   ├── Topbar/          # 顶栏 + 5 个设置弹窗（v0.21.x 拆分）
+│   │   └── Onboarding/      # v0.22.x 首次进入引导（Spotlight + 渐进式 hints）
 │   ├── stores/              # Zustand 状态
-│   ├── repositories/        # 数据层（存储抽象）
-│   ├── services/            # 业务逻辑
+│   │   └── useBookmarkStore/  # v0.21.x 拆 7 个 slice + scheduler 独立
+│   ├── repositories/        # 数据层（存储抽象 + Dexie 索引）
+│   ├── services/            # 业务逻辑（SyncService / bookmarkImporter / bookmarkExporter）
 │   ├── types/               # 类型定义
-│   ├── hooks/               # React hooks
 │   ├── utils/               # 工具函数
 │   └── styles/              # 全局样式
 ├── public/                  # 静态资源（图标等）

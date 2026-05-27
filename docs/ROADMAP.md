@@ -7,6 +7,8 @@
 > 当前实际进展见 [version history](#当前进度速览-202605)。
 >
 > **进度速记**：V1.0 ✅、V1.5 ✅、V2.0 未开始、V3.0/AI 12/14 已交付。
+> v0.22.x 收尾批：首次进入引导（Spotlight + 渐进式）/ 拖入链接快速添加 /
+> 浏览器书签自动同步 / 卡片标签编辑器 全部到位。
 
 ---
 
@@ -134,6 +136,10 @@
 ## 当前进度速览（2026-05）
 
 ```
+v0.22.x  feat 首次进入引导（L1 5 步 Spotlight + L1.5 渐进式 + placeholder 轮换）
+v0.22.x  feat 拖入链接快速添加（HTML5 drag + 与 dnd-kit 完全独立）
+v0.22.x  feat 浏览器书签自动同步开关（scheduleBookmarksSyncPush 汇聚点 + 3s debounce）
+v0.22.x  feat 卡片菜单加「编辑标签」入口（TagsEditorDialog + 常用 tags 推荐）
 v0.21.x  feat V1.5 跨设备同步（settings + bookmarks 整包 LWW，chrome.storage.sync）
 v0.21.x  refactor 大文件按职责拆分 + 卡片尺寸三档 + 背景毛玻璃 / 卡片毛玻璃开关 + AI 搜索网格 + 虚拟滚动
 v0.20.0  feat §7.3 多浮窗（分离 tab 到独立可拖动浮窗）
