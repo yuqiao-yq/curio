@@ -65,7 +65,11 @@ const CARD_SIZE_STYLES: Record<
     icon: 'w-8 h-8 rounded',
     title: 'text-sm font-semibold leading-snug truncate text-slate-800 dark:text-slate-100',
     host: 'text-[11px]',
-    note: 'text-[11px] leading-snug line-clamp-1 rounded px-1.5 py-1 -mx-1.5',
+    // 用 truncate（单行 + nowrap + ellipsis）替代 line-clamp-1：
+    // line-clamp + padding 在 webkit 下会让第 2 行字符的顶部 1~4px 漏出
+    // 到 padding-bottom 区域（视觉上像被切了一半的下半截字）。truncate
+    // 是 nowrap 的硬截断，根本不存在第 2 行，彻底无漏。
+    note: 'text-[11px] leading-snug truncate rounded px-1.5 py-1 -mx-1.5',
     addNote: 'text-[11px] rounded px-1.5 py-1 -mx-1.5',
   },
   // standard = 原「小」(h-24) — 老 'sm' 用户迁移落到这里
@@ -75,7 +79,8 @@ const CARD_SIZE_STYLES: Record<
     icon: 'w-8 h-8 rounded',
     title: 'text-sm font-semibold leading-snug truncate text-slate-800 dark:text-slate-100',
     host: 'text-[11px]',
-    note: 'text-[11px] leading-snug line-clamp-1 rounded px-1.5 py-1 -mx-1.5',
+    // 同上：truncate 替代 line-clamp-1，规避 webkit line-clamp + padding 漏行
+    note: 'text-[11px] leading-snug truncate rounded px-1.5 py-1 -mx-1.5',
     addNote: 'text-[11px] rounded px-1.5 py-1 -mx-1.5',
   },
   // large = 原「中」(h-32) — 老 'md' / 'lg' 用户迁移落到这里
@@ -85,7 +90,11 @@ const CARD_SIZE_STYLES: Record<
     icon: 'w-9 h-9 rounded-lg',
     title: 'text-sm font-semibold leading-snug line-clamp-2 text-slate-800 dark:text-slate-100',
     host: 'text-[11px]',
-    note: 'text-xs leading-snug line-clamp-2 rounded-md px-2 py-1.5 -mx-2',
+    // large 允许 2 行，必须保留 line-clamp-2。同时显式约束 max-h 为 2 行的
+    // 内容高度 + 上下 padding（leading-snug=1.375 × text-xs=12px = 16.5px/行
+    // 2 行 = 33px + py-1.5 = 12px → max-h ≈ 45px），二次保险防止"半行字"
+    // 漏到 padding 区。
+    note: 'text-xs leading-snug line-clamp-2 max-h-[45px] overflow-hidden rounded-md px-2 py-1.5 -mx-2',
     addNote: 'text-xs rounded-md px-2 py-1.5 -mx-2',
   },
 }
