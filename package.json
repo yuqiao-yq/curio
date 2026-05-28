@@ -15,6 +15,7 @@
     "zip:firefox": "wxt zip -b firefox",
     "zip:all": "wxt zip && wxt zip -b firefox",
     "compile": "tsc --noEmit",
+    "icons": "node scripts/generate-icons.mjs",
     "release": "bash scripts/release.sh",
     "postinstall": "wxt prepare"
   },
@@ -34,6 +35,7 @@
     "zustand": "^4.5.5"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@types/chrome": "^0.0.270",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",

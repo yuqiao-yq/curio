@@ -1,0 +1,48 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    Curio · 主图标（48 / 96 / 128 px 用）
+
+    设计语言：
+      - 圆角方背景 + 浅蓝渐变（#bee4f8 → #619cfb）—— 清新天蓝偏紫
+      - 字母 C：与 ribbon 同色系的极淡暖白光晕，退到背景层作为「收藏柜」环抱
+      - 书签 ribbon：主元素，暖金渐变（#d3bc69 → #f4f1e4）
+        像古籍书页 / 羊皮纸折叠的明暗，与冷蓝背景形成经典暖冷对比
+      - 整体隐喻：「Curio 收藏柜捧着一张精心收藏的书签」
+  -->
+  <defs>
+    <!-- 背景：浅蓝 → 偏紫蓝 -->
+    <linearGradient id="curio-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#bee4f8"/>
+      <stop offset="100%" stop-color="#619cfb"/>
+    </linearGradient>
+    <!-- Ribbon：左上 → 右下斜对角渐变，左上深米 → 右下暖白高光 -->
+    <linearGradient id="curio-ribbon" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#d3bc69"/>  <!-- 左上深米黄 -->
+      <stop offset="100%" stop-color="#f4f1e4"/>  <!-- 右下暖白高光 -->
+    </linearGradient>
+  </defs>
+
+  <!-- 圆角方背景 -->
+  <rect width="128" height="128" rx="28" fill="url(#curio-bg)"/>
+
+  <!-- 字母 C：与 ribbon 同色系的极淡暖白光晕，圆心 (64, 64) 半径 42 -->
+  <path
+    d="M 102 46 A 42 42 0 1 0 102 82"
+    fill="none"
+    stroke="rgba(237,226,181,0.261)"
+    stroke-width="14"
+    stroke-linecap="round"
+  />
+
+  <!-- 书签 ribbon：暖金渐变，完全在 C 内空区居中 -->
+  <path
+    d="M 50 85
+       L 50 47
+       Q 50 43 54 43
+       L 74 43
+       Q 78 43 78 47
+       L 78 85
+       L 64 77 Z"
+    fill="url(#curio-ribbon)"
+  />
+</svg>
