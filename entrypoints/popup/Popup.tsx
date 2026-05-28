@@ -11,6 +11,7 @@ import { getHostname } from '../../src/utils/favicon'
 import { cn } from '../../src/utils/cn'
 import { FaviconImg } from '../../src/components/FaviconImg'
 import { runLegacyMigrationOnce } from '../../src/services/legacyMigration'
+import { BookmarkTreeSection } from './BookmarkTreeSection'
 
 /**
  * 浏览器工具栏图标的 Popup。
@@ -515,6 +516,9 @@ export default function Popup() {
           </div>
         )}
       </section>
+
+      {/* ───── 浏览书签（树形 + 搜索；默认折叠） ───── */}
+      <BookmarkTreeSection categories={categories} cards={cards} />
     </div>
   )
 }
