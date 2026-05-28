@@ -3,6 +3,7 @@ import { browser } from 'wxt/browser'
 import type { BookmarkCard, Category } from '../../src/types/bookmark'
 import { cn } from '../../src/utils/cn'
 import { FaviconImg } from '../../src/components/FaviconImg'
+import { IconView } from '../../src/utils/icon'
 
 /**
  * Popup「浏览书签」section
@@ -322,11 +323,20 @@ function TreeRow({
         >
           {hasChildren ? (isExpanded ? '▾' : '▸') : ''}
         </span>
+        {/*
+          分类 icon 兼容 emoji / 图片 URL / data:image base64 三种存储形态
+          —— 直接渲染字符串会把 base64 文本喷出来，必须走 IconView
+        */}
         <span
           aria-hidden
-          className="w-4 text-center text-[12px] leading-none shrink-0"
+          className="w-4 inline-flex items-center justify-center shrink-0"
         >
-          {node.icon || '📁'}
+          <IconView
+            value={node.icon}
+            fallback="📁"
+            emojiClassName="text-[12px] leading-none"
+            imgClassName="w-3.5 h-3.5 rounded-sm object-contain"
+          />
         </span>
         <span className="truncate flex-1">{node.name}</span>
         {cardCount > 0 && (
