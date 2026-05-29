@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { BookmarkCard, UserSettings } from '../types/bookmark'
@@ -667,6 +667,23 @@ function SearchSourceChip({ meta }: { meta: SearchMeta }) {
  * 这里不与卡片整体的 click 共享事件 —— stopPropagation 避免误打开 URL；
  * 也禁用 dnd-kit 拖拽（pointerdown stopPropagation），让用户能稳定点中。
  */
+/**
+ * 卡片标签 chip 行。
+ *
+ * v0.22.x 重写：从「固定 MAX_VISIBLE=2 + 单 chip truncate」改为
+ * 「动态测量 + 整 chip 进出」：
+ *   - 每个 chip 不再被截字（去掉 max-w-[64px] truncate）
+ *   - 用一个隐藏的 ruler 层渲染所有 chip 测各自宽度
+ *   - 根据当前父容器可用宽度，逐个加入 chip，直到放不下下一个
+ *   - 放不下的全部收纳到 `+N` 里（短 tag 多就显示多个，长 tag 少就显示少个）
+ *
+ * 设计取舍：
+ *   - 给 hostname 至少留 RESERVED_FOR_HOSTNAME 宽度，避免 chips 把
+ *     "github.com" 这种短域名挤成空白
+ *   - ResizeObserver 监听父容器尺寸（卡片宽度随 grid 列数变化时刷新）
+ *   - 初始 visibleCount = tags.length；首次 paint 前 useLayoutEffect
+ *     同步修正，用户看不到中间态
+ */
 function CardTagChips({
   tags,
   onPickTag,
@@ -674,17 +691,93 @@ function CardTagChips({
   tags: string[]
   onPickTag: (tag: string) => void
 }) {
-  const MAX_VISIBLE = 2
-  const visible = tags.slice(0, MAX_VISIBLE)
-  const overflow = tags.length - visible.length
+  const wrapperRef = useRef<HTMLSpanElement>(null)
+  const [visibleCount, setVisibleCount] = useState(tags.length)
+
+  useLayoutEffect(() => {
+    const wrapper = wrapperRef.current
+    if (!wrapper) return
+    const parent = wrapper.parentElement
+    if (!parent) return
+
+    const measure = () => {
+      // 父行的可用宽度 = parent.clientWidth - 给 hostname 等元素的最小预留
+      // hostname 至少留 80 px（约 6 个英文字符 / 4 个汉字宽），避免被 chips 全挤没
+      const RESERVED_FOR_HOSTNAME = 80
+      const parentW = parent.clientWidth
+      const availableW = Math.max(0, parentW - RESERVED_FOR_HOSTNAME)
+      if (availableW <= 0) {
+        setVisibleCount(0)
+        return
+      }
+
+      // 从 ruler 层读每个 chip 的真实渲染宽度
+      const rulerTags = wrapper.querySelectorAll<HTMLElement>('[data-ruler-tag]')
+      const rulerOverflow = wrapper.querySelector<HTMLElement>('[data-ruler-overflow]')
+      const overflowW = rulerOverflow?.offsetWidth ?? 24
+      const GAP = 2 // gap-0.5
+
+      let used = 0
+      let count = 0
+      for (let i = 0; i < rulerTags.length; i++) {
+        const w = rulerTags[i].offsetWidth
+        const addGap = count > 0 ? GAP : 0
+        // 加入这个 chip 后，如果不是最后一个，还要给 +N 留位置
+        const willHaveOverflow = i < rulerTags.length - 1
+        const reserve = willHaveOverflow ? GAP + overflowW : 0
+        if (used + addGap + w + reserve > availableW) break
+        used += addGap + w
+        count++
+      }
+      setVisibleCount(count)
+    }
+
+    // 监听父容器尺寸变化（卡片在不同 grid 列数下宽度不同）
+    const ro = new ResizeObserver(measure)
+    ro.observe(parent)
+    measure()
+    return () => ro.disconnect()
+  }, [tags])
+
+  const overflow = Math.max(0, tags.length - visibleCount)
+  const visible = tags.slice(0, visibleCount)
+
+  // 统一样式（ruler 层和真实层共用，保证宽度测量一致）
+  const tagCls = cn(
+    'inline-flex items-center px-1.5 h-4 rounded-full text-[10px] leading-none whitespace-nowrap',
+    'bg-brand/10 text-brand hover:bg-brand/20 transition-colors',
+  )
+  const overflowCls = cn(
+    'inline-flex items-center px-1.5 h-4 rounded-full text-[10px] leading-none whitespace-nowrap',
+    'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 tabular-nums shrink-0',
+  )
 
   return (
     <span
-      className="inline-flex items-center gap-0.5 shrink-0"
+      ref={wrapperRef}
+      className="relative inline-flex items-center gap-0.5 shrink-0"
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
       title={tags.map((t) => `#${t}`).join(' ')}
     >
+      {/* 隐藏的 ruler 层：渲染所有 chip + 一个 +N 用于测量真实宽度
+          - absolute + opacity-0 + pointer-events-none 不参与布局 / 不可交互
+          - aria-hidden 屏幕阅读器跳过 */}
+      <span
+        aria-hidden
+        className="absolute left-0 top-0 opacity-0 pointer-events-none -z-10 inline-flex items-center gap-0.5"
+      >
+        {tags.map((t) => (
+          <span key={`ruler-${t}`} data-ruler-tag className={tagCls}>
+            {t}
+          </span>
+        ))}
+        <span data-ruler-overflow className={overflowCls}>
+          +{tags.length}
+        </span>
+      </span>
+
+      {/* 真实渲染：按 visibleCount 取前 N 个完整 chip + 可选 +N */}
       {visible.map((t) => (
         <button
           key={t}
@@ -693,11 +786,7 @@ function CardTagChips({
             e.stopPropagation()
             onPickTag(t)
           }}
-          className={cn(
-            'inline-flex items-center px-1.5 h-4 rounded-full text-[10px] leading-none',
-            'bg-brand/10 text-brand hover:bg-brand/20',
-            'max-w-[64px] truncate transition-colors',
-          )}
+          className={tagCls}
           title={`筛选含 #${t} 的书签`}
         >
           {t}
@@ -705,12 +794,8 @@ function CardTagChips({
       ))}
       {overflow > 0 && (
         <span
-          className={cn(
-            'inline-flex items-center px-1.5 h-4 rounded-full text-[10px] leading-none',
-            'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400',
-            'tabular-nums',
-          )}
-          title={tags.slice(MAX_VISIBLE).map((t) => `#${t}`).join(' ')}
+          className={overflowCls}
+          title={tags.slice(visibleCount).map((t) => `#${t}`).join(' ')}
         >
           +{overflow}
         </span>
