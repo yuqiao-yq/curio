@@ -7,6 +7,7 @@ import { HistoryCardItem } from './HistoryCardItem'
 import { confirmDialog, promptDialog } from './Dialog'
 import { cn } from '../utils/cn'
 import { IconView } from '../utils/icon'
+import { MenuIcons } from './CardMenu'
 
 const GRID_COLS =
   'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3'
@@ -139,6 +140,8 @@ export function RecentSection() {
     await updateSettings({ recentIncludeBrowserHistory: !includeHistory })
   }
 
+  const canClear = recentEntries.length > 0
+
   return (
     <section className="mb-6">
       {/* Header：与 CategorySection 子 section 视觉一致 */}
@@ -147,8 +150,8 @@ export function RecentSection() {
           onClick={() => setCollapsed((v) => !v)}
           title={collapsed ? '展开' : '折叠'}
           className={cn(
-            'w-7 h-7 flex items-center justify-center text-base rounded',
-            'text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800',
+            'w-6 h-6 flex items-center justify-center text-xs rounded',
+            'text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:text-slate-200 dark:hover:bg-slate-800',
             'opacity-0 group-hover/sec:opacity-100 focus-visible:opacity-100 transition-[opacity,transform] duration-150',
             collapsed ? '' : 'rotate-90',
           )}
@@ -161,50 +164,68 @@ export function RecentSection() {
           boxClassName="w-6 h-6"
           emojiClassName="text-sm leading-none"
         />
-        <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+        <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 tracking-tight">
           最近使用
         </span>
-        <span className="text-xs text-slate-400 tabular-nums">
-          {visibleItems.length} / {recentLimit}
+        {/* 计数：分子用 brand 突出，分母弱化 */}
+        <span className="text-[11px] tabular-nums leading-none">
+          <span className="text-brand font-semibold">{visibleItems.length}</span>
+          <span className="text-slate-300 dark:text-slate-600 mx-0.5">/</span>
+          <span className="text-slate-400">{recentLimit}</span>
         </span>
         <div className="flex-1" />
 
-        {/* 开关：包含浏览器历史 */}
+        {/* 历史开关：开启时常驻 brand 填充 pill；关闭时 hover 才显示 ghost pill */}
         <button
+          type="button"
           onClick={handleToggleHistory}
           className={cn(
-            'opacity-0 group-hover/sec:opacity-100 focus-visible:opacity-100 transition-opacity',
-            'btn-ghost !p-1 h-6 px-1.5 text-[11px] leading-none whitespace-nowrap',
-            'inline-flex items-center gap-1',
-            includeHistory && 'text-brand !opacity-100',
+            'inline-flex items-center gap-1 h-6 px-2 rounded-full text-[11px] font-medium whitespace-nowrap transition-all',
+            includeHistory
+              ? 'bg-brand text-white shadow-sm hover:bg-brand-600'
+              : 'text-slate-500 dark:text-slate-400 hover:text-brand hover:bg-brand/10 ' +
+                  'opacity-0 group-hover/sec:opacity-100 focus-visible:opacity-100',
           )}
           title={
             includeHistory
-              ? '已包含浏览器历史，点击关闭'
+              ? '已合并浏览器历史，点击关闭'
               : '点击开启：把浏览器全局历史也合并进来'
           }
         >
-          <span aria-hidden>{includeHistory ? '🌐' : '🌐'}</span>
-          <span>历史 {includeHistory ? 'ON' : 'OFF'}</span>
+          <HistoryIcon />
+          <span>{includeHistory ? '已合并历史' : '合并历史'}</span>
         </button>
 
+        {/* 数量配置：ghost pill */}
         <button
+          type="button"
           onClick={handleConfigLimit}
-          className="opacity-0 group-hover/sec:opacity-100 transition-opacity btn-ghost !p-1 h-6 px-1.5 text-[11px] leading-none whitespace-nowrap"
+          className={cn(
+            'inline-flex items-center gap-1 h-6 px-2 rounded-full text-[11px] font-medium whitespace-nowrap transition-colors',
+            'text-slate-500 dark:text-slate-400 hover:text-brand hover:bg-brand/10',
+            'opacity-0 group-hover/sec:opacity-100 focus-visible:opacity-100 transition-opacity',
+          )}
           title="设置展示数量"
         >
-          N={recentLimit}
+          <SlidersIcon />
+          <span>{recentLimit} 条</span>
         </button>
+
+        {/* 清空：圆形 ghost，hover 变红警示 */}
         <button
+          type="button"
           onClick={handleClear}
-          disabled={recentEntries.length === 0}
+          disabled={!canClear}
           className={cn(
-            'opacity-0 group-hover/sec:opacity-100 transition-opacity btn-ghost !p-1 h-6 w-6 text-xs',
-            recentEntries.length === 0 && 'cursor-not-allowed opacity-30',
+            'w-6 h-6 inline-flex items-center justify-center rounded-full transition-colors',
+            'opacity-0 group-hover/sec:opacity-100 focus-visible:opacity-100',
+            canClear
+              ? 'text-slate-500 dark:text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/15'
+              : 'text-slate-300 dark:text-slate-600 cursor-not-allowed',
           )}
           title="清空扩展内的打开记录（不影响浏览器历史）"
         >
-          🗑
+          <MenuIcons.Trash />
         </button>
       </header>
 
@@ -244,3 +265,53 @@ export function RecentSection() {
 type RecentRenderItem =
   | { kind: 'bookmark'; card: BookmarkCard; time: number }
   | { kind: 'history'; item: BrowserHistoryItem; time: number }
+
+// ─── 操作栏小图标（14×14 stroke 风格，与 MenuIcons 同款规范） ─────
+
+/** 历史 / 回拨时钟（用于「合并浏览器历史」开关） */
+function HistoryIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      {/* 钟面圆弧：留缺口给左侧的回拨箭头 */}
+      <path d="M3.05 11a9 9 0 1 1 .5 4" />
+      {/* 回拨箭头 */}
+      <polyline points="3 4 3 11 10 11" />
+      {/* 时针 */}
+      <path d="M12 8v4l3 2" />
+    </svg>
+  )
+}
+
+/** 三横滑块（用于「设置展示数量」按钮） */
+function SlidersIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <line x1="4" y1="6" x2="20" y2="6" />
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <line x1="4" y1="18" x2="20" y2="18" />
+      <circle cx="15" cy="6" r="2" fill="currentColor" />
+      <circle cx="9" cy="12" r="2" fill="currentColor" />
+      <circle cx="15" cy="18" r="2" fill="currentColor" />
+    </svg>
+  )
+}
