@@ -308,7 +308,9 @@ function BookmarkCardItemImpl({
         openUrl()
       }}
       className={cn(
-        'card group select-none overflow-hidden',
+        // relative 是为下方 absolute 定位的菜单按钮提供容器（v0.22.x：
+        // 之前菜单在 flex 内占布局，小屏会把标题/tags 挤到只剩 4~5 字符宽度）
+        'card group select-none overflow-hidden relative',
         'flex flex-col',
         editing
           ? cn('cursor-default ring-2 ring-brand/40 shadow-md', size.editingCard)
@@ -441,53 +443,62 @@ function BookmarkCardItemImpl({
           </div>
         )}
 
-        {!editing && (
-          <div
-            className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0"
-            // 菜单触发器自身不应触发卡片打开
-            onClick={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            <CardMenu
-              ariaLabel={`书签「${card.title}」操作菜单`}
-              items={[
-                {
-                  key: 'edit',
-                  label: '编辑',
-                  icon: <MenuIcons.Edit />,
-                  onSelect: startEdit,
-                },
-                {
-                  key: 'note',
-                  label: card.description ? '编辑备注' : '添加备注',
-                  icon: <MenuIcons.Note />,
-                  onSelect: () => void handleEditNote(),
-                },
-                {
-                  key: 'tags',
-                  // 文案根据当前有无 tags 切换，与「备注」一致的命名风格
-                  label: card.tags && card.tags.length > 0 ? '编辑标签' : '添加标签',
-                  icon: <TagIcon />,
-                  onSelect: () => setShowTagsEditor(true),
-                } satisfies CardMenuItem,
-                {
-                  key: 'related',
-                  label: '相关阅读',
-                  icon: <MenuIcons.Sparkle />,
-                  onSelect: () => setShowRelated(true),
-                } satisfies CardMenuItem,
-                {
-                  key: 'delete',
-                  label: '删除',
-                  icon: <MenuIcons.Trash />,
-                  danger: true,
-                  onSelect: () => void handleDelete(),
-                } satisfies CardMenuItem,
-              ]}
-            />
-          </div>
-        )}
       </div>
+
+      {/*
+        菜单按钮：绝对定位浮在卡片右上角，不占 flex 布局空间。
+        小屏（grid-cols-2，约 160 px 卡宽）下标题/tags 因此能多吃 ~32 px，
+        不再被压成 "首页-..." 那种 4~5 字的极限截断。
+        hover 时菜单显示，会浮在标题最右端的字符上 —— 用户 hover 本来就是
+        要操作菜单，可以接受这一点点视觉覆盖。
+      */}
+      {!editing && (
+        <div
+          className={cn(
+            'absolute top-2 right-2 z-10',
+            'opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity',
+          )}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <CardMenu
+            ariaLabel={`书签「${card.title}」操作菜单`}
+            items={[
+              {
+                key: 'edit',
+                label: '编辑',
+                icon: <MenuIcons.Edit />,
+                onSelect: startEdit,
+              },
+              {
+                key: 'note',
+                label: card.description ? '编辑备注' : '添加备注',
+                icon: <MenuIcons.Note />,
+                onSelect: () => void handleEditNote(),
+              },
+              {
+                key: 'tags',
+                label: card.tags && card.tags.length > 0 ? '编辑标签' : '添加标签',
+                icon: <TagIcon />,
+                onSelect: () => setShowTagsEditor(true),
+              } satisfies CardMenuItem,
+              {
+                key: 'related',
+                label: '相关阅读',
+                icon: <MenuIcons.Sparkle />,
+                onSelect: () => setShowRelated(true),
+              } satisfies CardMenuItem,
+              {
+                key: 'delete',
+                label: '删除',
+                icon: <MenuIcons.Trash />,
+                danger: true,
+                onSelect: () => void handleDelete(),
+              } satisfies CardMenuItem,
+            ]}
+          />
+        </div>
+      )}
 
       {/* 底部区：编辑 → 保存取消；搜索模式 → 分类来源 chip；常态 → 备注 */}
       <div className="mt-auto">
