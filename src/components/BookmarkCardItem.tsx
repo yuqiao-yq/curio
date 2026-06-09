@@ -110,8 +110,12 @@ const CARD_SIZE_STYLES: Record<
  *   - 编辑时禁用 dnd 拖拽与整卡 click（避免干扰输入）
  *   - Enter 保存 / Esc 取消
  * - 底部备注区始终可见（描述/Description）：
- *   - 已有备注 → 直接展示备注文本（最多 2 行），点击进入编辑
+ *   - 已有备注 → 直接展示备注文本（最多 2 行）
  *   - 无备注  → 展示低调的「+ 添加备注」占位按钮
+ *   - 交互（v0.22.x 起）：
+ *       · 单击 → 等同点击卡片，新开 URL（带 250ms 延迟判定避免误打开）
+ *       · 双击 → 进入备注编辑弹层
+ *     具体实现见 handleNoteClick / handleNoteDoubleClick + noteClickTimerRef。
  */
 function BookmarkCardItemImpl({
   card,
@@ -141,6 +145,21 @@ function BookmarkCardItemImpl({
 
   const cardRef = useRef<HTMLDivElement | null>(null)
   const draggedRecently = useRef(false)
+  /**
+   * v0.22.x：备注区单击→跳转、双击→编辑 的延迟判定 timer。
+   *
+   * 浏览器原生 dblclick 事件之前会先连续触发两次 click，没有任何
+   * "这是双击的一部分" 信号可以直接拿来用。为了让「单击备注也能跳转」
+   * 又不在双击编辑时误打开链接，采用经典延迟方案：
+   *   - 第 1 次 click：起一个 ~250ms 的 timer，到期才真正调 openUrl
+   *   - 250ms 内如果收到 dblclick：清掉 timer，转去 handleEditNote
+   *   - 第 2 次 click（双击的中间帧）：检测到 timer 已存在，不再排队，
+   *     让 dblclick 接管
+   *
+   * 250ms 是 macOS / Chrome 双击识别窗口的安全下限；调大体验更稳，
+   * 但会让单击跳转感觉「拖沓」。
+   */
+  const noteClickTimerRef = useRef<number | null>(null)
 
   // 就地编辑状态
   const [editing, setEditing] = useState(false)
@@ -244,6 +263,38 @@ function BookmarkCardItemImpl({
     if (next === null) return
     void updateCard(card.id, { description: next.trim() || undefined })
   }
+
+  // 备注区单击：延迟 250ms 才跳转，期间若收到 dblclick 则取消
+  const handleNoteClick = () => {
+    if (noteClickTimerRef.current !== null) {
+      // 双击的第 2 次 click：第 1 次的 timer 还挂着，dblclick 会接管，这里啥也不做
+      return
+    }
+    noteClickTimerRef.current = window.setTimeout(() => {
+      noteClickTimerRef.current = null
+      openUrl()
+    }, 250)
+  }
+
+  // 备注区双击：吃掉 pending 的单击 timer，转去编辑
+  const handleNoteDoubleClick = () => {
+    if (noteClickTimerRef.current !== null) {
+      window.clearTimeout(noteClickTimerRef.current)
+      noteClickTimerRef.current = null
+    }
+    void handleEditNote()
+  }
+
+  // 组件卸载时兜底清理 pending timer，避免在已卸载组件上调 openUrl
+  useEffect(
+    () => () => {
+      if (noteClickTimerRef.current !== null) {
+        window.clearTimeout(noteClickTimerRef.current)
+        noteClickTimerRef.current = null
+      }
+    },
+    [],
+  )
 
   const handleDelete = async () => {
     if (
@@ -531,10 +582,18 @@ function BookmarkCardItemImpl({
         ) : card.description ? (
           <button
             type="button"
+            // v0.22.x：备注区单击→跳转、双击→编辑（延迟判定见 noteClickTimerRef）。
+            // 这里仍 stopPropagation 避免事件再次冒泡到卡片 onClick 走一遍 openUrl，
+            // 跳转动作完全交给 handleNoteClick 内的 timer 收口，时序更可控。
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              void handleEditNote()
+              handleNoteClick()
+            }}
+            onDoubleClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              handleNoteDoubleClick()
             }}
             onPointerDown={(e) => e.stopPropagation()}
             className={cn(
@@ -542,17 +601,23 @@ function BookmarkCardItemImpl({
               size.note,
               'hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors',
             )}
-            title="点击编辑备注"
+            title="单击打开 · 双击编辑备注"
           >
             {card.description}
           </button>
         ) : (
           <button
             type="button"
+            // 同上：「+ 添加备注」占位走相同的延迟判定。
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              void handleEditNote()
+              handleNoteClick()
+            }}
+            onDoubleClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              handleNoteDoubleClick()
             }}
             onPointerDown={(e) => e.stopPropagation()}
             className={cn(
@@ -564,7 +629,7 @@ function BookmarkCardItemImpl({
               'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
               'transition-opacity',
             )}
-            title="为该书签添加备注"
+            title="单击打开 · 双击添加备注"
           >
             + 添加备注
           </button>
