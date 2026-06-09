@@ -54,11 +54,27 @@ interface LMApi {
   source: string
 }
 
+/**
+ * Chrome 138+ LanguageModel 新规范：
+ *   - availability() / create() 都接受 expectedOutputs
+ *   - 不传 → 浏览器在 console 打印 "No output language was specified" 警告
+ *
+ * 我们的本地推理用途（域名解析、英文短词、tab 分类等）只用英文输出；
+ * 即便用户场景是中文，Gemini Nano 中文质量也偏弱，会自动回落到远程 Provider，
+ * 所以统一声明 'en' 是当前最稳妥的方案。
+ */
+const LM_EXPECTED_OUTPUTS: Array<{ type: 'text'; languages: string[] }> = [
+  { type: 'text', languages: ['en'] },
+]
+
 /** 探测出 Chrome 当前提供的 API；都不存在返回 null */
 function detectLMApi(): LMApi | null {
   const g = globalThis as unknown as {
     LanguageModel?: {
-      availability?: () => Promise<Availability>
+      /** Chrome 138+：availability 也支持 expectedOutputs/Inputs 评估特定语言可用性 */
+      availability?: (opts?: {
+        expectedOutputs?: Array<{ type: 'text'; languages: string[] }>
+      }) => Promise<Availability>
       create?: (opts?: {
         initialPrompts?: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
         /** Chrome 138+ 新规范，必传以避免 "No output language" 警告 */
@@ -83,19 +99,21 @@ function detectLMApi(): LMApi | null {
   if (g.LanguageModel?.availability && g.LanguageModel?.create) {
     return {
       source: 'LanguageModel (Chrome 138+)',
-      check: () => g.LanguageModel!.availability!(),
+      // availability 也要带上 expectedOutputs；否则 newtab 一加载就会在
+      // chrome://newtab/ 控制台出现 "No output language was specified" 警告。
+      // 老版本 Chrome 的 availability() 不认这个参数，但会 silently 忽略未知字段，
+      // 兼容性安全。
+      check: () =>
+        g.LanguageModel!.availability!({ expectedOutputs: LM_EXPECTED_OUTPUTS }),
       create: async ({ systemPrompt }) => {
         // Chrome 内置 LanguageModel 当前仅支持 en / es / ja 输出，
         // 不显式指定会触发 "No output language was specified" 警告。
-        // 我们的主要用法是英文 / 域名 / 短词，统一用 'en'。
-        // 注意：Gemini Nano 不擅长中文输出，**这也是一个产品限制**，
-        // 中文场景建议用户走远程 Provider（DeepSeek / OpenAI 等）。
         return g.LanguageModel!.create!({
           initialPrompts: systemPrompt
             ? [{ role: 'system', content: systemPrompt }]
             : undefined,
           // 新规范字段（Chrome 138+）
-          expectedOutputs: [{ type: 'text', languages: ['en'] }],
+          expectedOutputs: LM_EXPECTED_OUTPUTS,
           // 兼容部分中间版本的旧字段
           outputLanguage: 'en',
         })
