@@ -13,6 +13,14 @@ export default defineConfig({
     name: 'Curio - 书签整理新标签页',
     short_name: 'Curio',
     description: '替代浏览器新标签页，DIY 你的个人书签整理面板',
+    // 上架 Chrome Web Store 时审核会看的元信息：
+    // - author：用于商店「开发者」一栏
+    // - homepage_url：用户在扩展详情页点「来源」会跳到这里
+    // - minimum_chrome_version：避免老版 Chrome 安装后 LanguageModel / favicon
+    //   等 API 缺失而白屏；保守取 120（覆盖了 MV3 + 现代 ECMA + favicon URL）
+    author: 'yuqiao-yq',
+    homepage_url: 'https://github.com/yuqiao-yq/curio',
+    ...(browser === 'chrome' ? { minimum_chrome_version: '120' } : {}),
     permissions: [
       'bookmarks',
       'storage',
@@ -34,6 +42,16 @@ export default defineConfig({
      * - 不会读 cookie / Authorization 头，仅 fetch 公开 HTML
      */
     host_permissions: ['<all_urls>'],
+    // WXT 默认会按文件名自动从 public/icon/*.png 生成 icons 字段，
+    // 但商店审核偶尔会因「未显式声明」打回；这里显式列出 16/32/48/96/128。
+    // 文件实际存在于 public/icon/ 下（由 scripts/generate-icons.mjs 产出）。
+    icons: {
+      16: 'icon/16.png',
+      32: 'icon/32.png',
+      48: 'icon/48.png',
+      96: 'icon/96.png',
+      128: 'icon/128.png',
+    },
     chrome_url_overrides: {
       newtab: 'newtab.html',
     },
