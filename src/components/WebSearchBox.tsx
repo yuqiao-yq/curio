@@ -289,7 +289,6 @@ export function WebSearchBox() {
       lastWrittenRef.current = storeKeyword
       setRaw(storeKeyword)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeKeyword])
 
   // 持久化用户选择的引擎

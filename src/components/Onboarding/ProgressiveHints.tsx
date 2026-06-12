@@ -104,8 +104,10 @@ export function ProgressiveHints() {
 
   // 卸载清理
   useEffect(() => {
+    // 拷一个变量出来，避免 cleanup 执行时 ref 已被赋新值（react-hooks 警告）
+    const timerRef = pendingTimerRef
     return () => {
-      if (pendingTimerRef.current) window.clearTimeout(pendingTimerRef.current)
+      if (timerRef.current) window.clearTimeout(timerRef.current)
     }
   }, [])
 
