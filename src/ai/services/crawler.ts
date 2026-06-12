@@ -1,4 +1,15 @@
-import { Readability } from '@mozilla/readability'
+/**
+ * @mozilla/readability 体积约 52KB（约占首屏 chunk 5%）；
+ * 仅在用户开启「内容抓取」并实际触发 crawlPage 时才需要。
+ * 改为 dynamic import：UI 静态分析时不会把它打进首屏 chunk。
+ */
+let _ReadabilityCtor: typeof import('@mozilla/readability').Readability | null = null
+async function getReadability() {
+  if (_ReadabilityCtor) return _ReadabilityCtor
+  const mod = await import('@mozilla/readability')
+  _ReadabilityCtor = mod.Readability
+  return _ReadabilityCtor
+}
 import {
   type PageContentRow,
   getFailedRows,
@@ -184,6 +195,7 @@ async function fetchAndParse(
     base.setAttribute('href', url)
     doc.head?.prepend(base)
 
+    const Readability = await getReadability()
     const article = new Readability(doc).parse()
     if (!article || !article.textContent) {
       return { ok: false, error: 'Readability 未能提取出正文' }

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { cn } from '../utils/cn'
 
 /**
@@ -9,16 +9,28 @@ import { cn } from '../utils/cn'
  *   但不引入 react-markdown 等额外依赖，自己实现一个轻量 markdown 解析器，
  *   覆盖：标题 / 段落 / 列表 / fenced 代码块 / 行内代码 / 粗斜体 /
  *        链接 / 引用 / 分隔线 / 管道表格。
- * - 这样 docs/USER_GUIDE.md 既是仓库内开发者文档，也是弹窗内容唯一来源；
+ * - docs/USER_GUIDE.md 既是仓库内开发者文档，也是弹窗内容唯一来源；
  *   通过 Vite 的 `?raw` 后缀以纯文本方式 import，避免双份维护。
+ * - **lazy import**：USER_GUIDE.md ~52KB，如果在 Topbar 静态 import 会进首屏
+ *   chunk；改为在弹窗首次打开时 dynamic import，节省启动包体。
  */
 interface Props {
-  /** 完整的 markdown 源文本（来自 docs/USER_GUIDE.md?raw） */
-  source: string
   onClose: () => void
 }
 
-export function HelpDialog({ source, onClose }: Props) {
+export function HelpDialog({ onClose }: Props) {
+  // 用户指南正文（首次打开时 async 加载；中间会有一瞬白屏 / loading 文案）
+  const [source, setSource] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    import('../../docs/USER_GUIDE.md?raw').then((m) => {
+      if (!cancelled) setSource((m as { default: string }).default)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   // ESC 关闭（与 Topbar.DialogShell 的快捷键策略保持一致）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -64,7 +76,11 @@ export function HelpDialog({ source, onClose }: Props) {
 
         {/* 体（弹窗内独立滚动，不动背景） */}
         <div className="flex-1 overflow-y-auto px-6 py-5 prose-curio">
-          <MarkdownView source={source} />
+          {source == null ? (
+            <p className="text-sm text-slate-400">正在加载文档…</p>
+          ) : (
+            <MarkdownView source={source} />
+          )}
         </div>
 
         {/* 底 */}
@@ -456,7 +472,8 @@ function parseInlineTokens(
     start: number
     end: number
     kind: 'code' | 'link' | 'strong' | 'em'
-    payload: any
+    /** code/strong/em → string; link → 链接元组 */
+    payload: string | { text: string; href: string }
   }
 
   const hits: Hit[] = []
@@ -547,11 +564,11 @@ function parseInlineTokens(
             'text-rose-600 dark:text-rose-300',
           )}
         >
-          {h.payload}
+          {h.payload as string}
         </code>,
       )
     } else if (h.kind === 'link') {
-      const { text: t, href } = h.payload
+      const { text: t, href } = h.payload as { text: string; href: string }
       nodes.push(
         <a
           key={k}

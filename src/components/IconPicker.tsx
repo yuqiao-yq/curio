@@ -1,9 +1,14 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '../utils/cn'
 import { COMMON_EMOJIS, IconView, isImageIcon } from '../utils/icon'
-import { ImageCropDialog } from './ImageCropDialog'
 import { toast } from '../stores/useToastStore'
+
+// ImageCropDialog 内部依赖 react-easy-crop (~32KB)，仅在用户上传图片需要裁剪时
+// 才用到；改为 lazy，避免每次打开 IconPicker 都把裁剪库拉进首屏 chunk。
+const ImageCropDialog = lazy(() =>
+  import('./ImageCropDialog').then((m) => ({ default: m.ImageCropDialog })),
+)
 
 type Tab = 'emoji' | 'url' | 'upload'
 
@@ -340,14 +345,18 @@ export function IconPicker({
       </span>
       {popover}
       {cropSource && (
-        <ImageCropDialog
-          source={cropSource}
-          onConfirm={(dataURL) => {
-            setCropSource(null)
-            pick(dataURL)
-          }}
-          onCancel={() => setCropSource(null)}
-        />
+        // Suspense fallback 用 null：裁剪库通常 100ms 内加载完，弹层短暂"延后弹出"
+        // 比加一层 loading 文案更不打扰；网络极慢时用户最坏感知是"按钮没反应"
+        <Suspense fallback={null}>
+          <ImageCropDialog
+            source={cropSource}
+            onConfirm={(dataURL) => {
+              setCropSource(null)
+              pick(dataURL)
+            }}
+            onCancel={() => setCropSource(null)}
+          />
+        </Suspense>
       )}
     </>
   )

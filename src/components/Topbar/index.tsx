@@ -14,9 +14,6 @@ import { WebSearchBox } from '../WebSearchBox'
 import { CardMenu } from '../CardMenu'
 import { HelpDialog } from '../HelpDialog'
 import { confirmDialog } from '../Dialog'
-// docs/USER_GUIDE.md 是用户文档的唯一来源，弹窗内容由它驱动
-// （Vite 的 ?raw 后缀会把文件以纯字符串形式 import 进来）
-import userGuideMd from '../../../docs/USER_GUIDE.md?raw'
 
 import { DatabaseIcon, PaletteIcon, InfoIcon, HelpIcon, GearIcon, CompassIcon } from './icons'
 import { useOnboardingStore } from '../Onboarding'
@@ -405,13 +402,10 @@ export function Topbar() {
           document.body,
         )}
 
-      {/* 帮助文档弹窗：渲染 docs/USER_GUIDE.md 的内容 */}
+      {/* 帮助文档弹窗：HelpDialog 内部按需 dynamic import docs/USER_GUIDE.md */}
       {helpDialogOpen &&
         createPortal(
-          <HelpDialog
-            source={userGuideMd}
-            onClose={() => setHelpDialogOpen(false)}
-          />,
+          <HelpDialog onClose={() => setHelpDialogOpen(false)} />,
           document.body,
         )}
     </header>
