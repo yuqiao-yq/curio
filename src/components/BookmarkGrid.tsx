@@ -16,7 +16,7 @@ import {
 } from '@dnd-kit/sortable'
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { flushSync } from 'react-dom'
-import type { BookmarkCard, Category } from '../types/bookmark'
+import type { Category } from '../types/bookmark'
 import { useBookmarkStore } from '../stores/useBookmarkStore'
 import { useDropHintStore, findDropTargetAt } from '../stores/useDropHintStore'
 import { toast } from '../stores/useToastStore'
@@ -518,8 +518,6 @@ function CategorySection({
 
   // section 整体为空时（无子文件夹、无书签）也显示出来——保持目录结构可见
   const sectionIsEmpty = subFolders.length === 0 && directCards.length === 0
-  const addCardHeightClass =
-    cardSize === 'compact' ? 'h-28' : cardSize === 'large' ? 'h-32' : 'h-24'
   // + 占位用正方形：宽=高，避免在网格列里被拉成长方形
   const addCardSquareClass =
     cardSize === 'compact'

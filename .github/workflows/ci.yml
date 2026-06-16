@@ -1,0 +1,52 @@
+name: CI
+
+# PR + push 到主分支都触发，保证主分支永远绿
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# 同分支并发 PR 自动取消旧 run，节省 Actions 时间
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Type-check / Lint / Test / Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 自动读取 package.json 的 packageManager 字段保证版本一致
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # 顺序：先类型 → 再 lint → 再 test → 最后 build
+      # 这样失败时第一时间能看到最具体的报错（type 错误最容易定位）
+      - name: Type check
+        run: pnpm compile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test:ci
+
+      - name: Build (Chrome)
+        run: pnpm build
+
+      - name: Build (Firefox)
+        run: pnpm build:firefox

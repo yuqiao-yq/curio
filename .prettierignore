@@ -1,0 +1,11 @@
+node_modules
+.wxt
+.output
+dist
+public
+pnpm-lock.yaml
+*.svg
+*.png
+*.zip
+stats.html
+stats-*.json

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useBookmarkStore } from '../../../stores/useBookmarkStore'
 import { useAISettingsStore, useIsAIConfigured } from '../../../ai/useAISettingsStore'
@@ -18,7 +18,6 @@ import {
 } from '../../../ai/services/plan'
 import {
   ORGANIZE_STYLE_LABEL,
-  type OrganizeRange,
   type OrganizeStyle,
 } from '../../../ai/types'
 import { useAIPanelStore } from '../../../ai/panel/usePanelStore'

@@ -1,10 +1,27 @@
 import { defineConfig } from 'wxt'
+import { visualizer } from 'rollup-plugin-visualizer'
 
 // See https://wxt.dev/api/config.html
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   srcDir: '.',
   outDir: '.output',
+  // `ANALYZE=1 pnpm build` 触发：产物输出到 stats.html，浏览器打开看 chunk treemap
+  // 平时不启用，避免每次 build 都生成无用文件 / 拖慢 CI
+  vite: () =>
+    process.env.ANALYZE
+      ? {
+          plugins: [
+            visualizer({
+              filename: 'stats.html',
+              template: 'treemap',
+              gzipSize: true,
+              brotliSize: true,
+              open: false,
+            }),
+          ],
+        }
+      : {},
   // ─── 跨浏览器 manifest ─────────────────────────────
   // 用函数式 manifest 让 chrome / firefox 各自合法：
   // - chrome MV3：保留 'favicon' 权限（用于 chrome-extension://EXT_ID/_favicon/）
