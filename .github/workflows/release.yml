@@ -38,8 +38,15 @@ jobs:
         # network-timeout 等参数已配置在 .npmrc 中
         run: pnpm install --frozen-lockfile
 
+      # 与 ci.yml 保持同一道质量门禁：lint / test 红的版本不允许发 release
       - name: Type check
         run: pnpm compile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test:ci
 
       - name: Build & Zip (Chrome + Firefox)
         run: pnpm zip:all
