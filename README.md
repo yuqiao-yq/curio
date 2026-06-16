@@ -1,5 +1,7 @@
 # Curio
 
+[![CI](https://github.com/yuqiao-yq/curio/actions/workflows/ci.yml/badge.svg)](https://github.com/yuqiao-yq/curio/actions/workflows/ci.yml)
+
 > 替代浏览器新标签页的书签整理工具，支持 Chrome / Edge / Firefox / Brave / Opera。
 
 打开新标签页，看到的不是默认页面，而是你自己整理好的、分类清晰的书签卡片墙。
