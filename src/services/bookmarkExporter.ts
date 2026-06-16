@@ -128,19 +128,52 @@ export async function exportToBrowserBookmarks(
   }
 
   // 6) 镜像清理：删除挂在镜像目录下、但不属于 Curio 数据的节点
+  //
+  // v0.22.x 灾难性 bug 修复：之前 pruneStrangers 是"贪心删除"，遇到下面三种
+  // case 都会把用户的书签全清掉，触发"文件夹在但书签全没了"的事故：
+  //   1) cards 数组在 race condition 下传入了空数组（state 没刷新等）
+  //   2) cards.bookmarkId 与浏览器节点 id 全员错位（跨设备同步把另一台设
+  //      备的 id 写到了本机）
+  //   3) syncCardBookmark 因 url 校验等原因全部抛错，cardIdToBookmarkId 空
+  //
+  // 这里加两道保护：
+  //   ① url 白名单兜底：节点 url 命中 Curio cards 集合就保留（救 case 2/3）
+  //   ② 保险丝：如果 Curio 一侧 cards 数量非空、但全部 sync 失败（也就是
+  //      cardIdToBookmarkId 空集），明显异常，跳过 prune 并记录 error，避
+  //      免把"上次成功同步过的浏览器节点"全清掉（救 case 1/3 的退化态）。
   const validBrowserIds = new Set<string>([
     mirrorFolderId,
     ...catFolderMap.values(),
     ...result.cardIdToBookmarkId.values(),
   ])
-  // 已经在浏览器侧存在、且被 Curio 记录的旧 bookmarkId 也算合法
   for (const cat of categories) {
     if (cat.bookmarkId) validBrowserIds.add(cat.bookmarkId)
   }
   for (const card of cards) {
     if (card.bookmarkId) validBrowserIds.add(card.bookmarkId)
   }
-  await pruneStrangers(mirrorFolderId, validBrowserIds, result)
+  const validUrls = new Set<string>()
+  for (const card of cards) {
+    if (card.url) validUrls.add(card.url)
+  }
+
+  // 保险丝：cards 非空 + cardIdToBookmarkId 空 → 异常态，跳过 prune
+  // （等同于"宁愿暂时残留几条孤儿，也不能把用户辛苦攒的书签清空"）
+  const cardsLikelyAllFailed =
+    cards.length > 0 && result.cardIdToBookmarkId.size === 0
+  if (cardsLikelyAllFailed) {
+    result.errors.push(
+      `检测到 ${cards.length} 张书签全部同步失败（bookmarkId 错位或 chrome API 异常），` +
+        '为防止误删，本次跳过镜像清理。请检查 Console 详细日志。',
+    )
+    console.warn(
+      '[exportToBrowser] 跳过 pruneStrangers：cards 非空但 cardIdToBookmarkId 为空，疑似异常态',
+      { cardsCount: cards.length, catsCount: categories.length },
+    )
+    return result
+  }
+
+  await pruneStrangers(mirrorFolderId, validBrowserIds, validUrls, result)
 
   return result
 }
@@ -329,10 +362,13 @@ async function syncCardBookmark(
  *  - 删除时优先使用 removeTree（含子节点）以减少 API 调用次数
  *  - mirrorFolderId 本身必须保留
  *  - 对单条删除失败采用容错处理：记录到 errors，不中断
+ *  - validUrls 是基于 Curio cards.url 的兜底白名单，url 命中即保留
+ *    （防止 bookmarkId 错位导致整文件夹被误清的灾难场景）
  */
 async function pruneStrangers(
   mirrorFolderId: string,
   validIds: Set<string>,
+  validUrls: Set<string>,
   result: ExportResult,
 ): Promise<void> {
   const stack: string[] = [mirrorFolderId]
@@ -348,6 +384,15 @@ async function pruneStrangers(
       if (validIds.has(child.id)) {
         // 合法节点 → 继续向下检查（仅文件夹需要展开）
         if (!child.url) stack.push(child.id)
+        continue
+      }
+      // url 兜底：是书签节点 + url 命中 Curio cards 集合 → 视为可信，不删
+      // 仅日志告警，方便排查（"这条本该已经匹配上 bookmarkId 的，结果走了兜底"）
+      if (child.url && validUrls.has(child.url)) {
+        console.warn(
+          '[exportToBrowser] 节点 id 未匹配但 url 命中 Curio 数据，保留以防误删：',
+          { id: child.id, url: child.url, title: child.title },
+        )
         continue
       }
       // 不合法 → 移除（文件夹用 removeTree，叶子用 remove）
