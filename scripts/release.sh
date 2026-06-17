@@ -12,7 +12,8 @@
 # 行为顺序：
 #   1) 校验：版本号格式 / 工作区干净 / tag 本地与远端均无冲突 / 当前分支
 #   2) bump  package.json 的 version 字段（用 node 改 JSON 比 sed 稳）
-#   3) pnpm build 验证构建产物，失败自动还原 package.json
+#   3) pnpm lint / test:ci / build 三道门禁，任何一道失败自动还原 package.json
+#      （与 .github/workflows/release.yml 保持同一道质量标准）
 #   4) git commit "chore(release): vX.Y.Z" + git tag -a vX.Y.Z
 #   5) git push origin <branch> && git push origin <tag>
 #   6) 输出 .output/chrome-mv3/ 产物与 GitHub Release 网页链接
@@ -32,7 +33,7 @@ warn()  { printf "%s!%s %s\n"  "$YELLOW" "$NC" "$*"; }
 fatal() { printf "%s✗%s %s\n"  "$RED"    "$NC" "$*" >&2; exit 1; }
 
 usage() {
-  sed -n '3,18p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '3,19p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
 }
 
@@ -126,7 +127,25 @@ node -e '
 ' "$PLAIN_VER"
 ok "package.json version = $PLAIN_VER"
 
-# ─── pnpm build 验证 ──────────────────────────────
+# ─── 质量门禁：lint → test → build ────────────────
+# 与 .github/workflows/release.yml 保持同一道关卡，避免本地推完 tag 才被 CI 拦下
+# 任一失败都走 trap → restore_pkg，回滚刚 bump 的 package.json
+LINT_LOG="${TMPDIR:-/tmp}/curio-lint-log-$$.log"
+log "pnpm lint 校验（日志：${LINT_LOG}）..."
+if ! pnpm lint >"$LINT_LOG" 2>&1; then
+  tail -30 "$LINT_LOG"
+  fatal "pnpm lint 失败，已回滚 package.json，详细日志：${LINT_LOG}"
+fi
+ok "lint 通过（0 error / 0 warning）"
+
+TEST_LOG="${TMPDIR:-/tmp}/curio-test-log-$$.log"
+log "pnpm test:ci 校验（日志：${TEST_LOG}）..."
+if ! pnpm test:ci >"$TEST_LOG" 2>&1; then
+  tail -30 "$TEST_LOG"
+  fatal "pnpm test:ci 失败，已回滚 package.json，详细日志：${TEST_LOG}"
+fi
+ok "测试通过"
+
 BUILD_LOG="${TMPDIR:-/tmp}/curio-build-log-$$.log"
 log "pnpm build 验证（日志：${BUILD_LOG}）..."
 if ! pnpm build >"$BUILD_LOG" 2>&1; then
@@ -135,7 +154,7 @@ if ! pnpm build >"$BUILD_LOG" 2>&1; then
 fi
 ok "构建通过（产物在 .output/chrome-mv3/）"
 
-# 走到这里 build 成功，清掉备份与 trap，避免后续步骤出错时把已 commit 的 version 也回滚
+# 走到这里三道门禁都过，清掉备份与 trap，避免后续步骤出错时把已 commit 的 version 也回滚
 rm -f "$PKG_BACKUP"
 trap - ERR EXIT
 
