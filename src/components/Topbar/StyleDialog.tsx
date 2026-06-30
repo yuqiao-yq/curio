@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   CARD_HEIGHT_MAX_PX,
   CARD_HEIGHT_MIN_PX,
@@ -11,12 +11,22 @@ import {
   CUSTOM_H_MIN_DEFAULT,
   CUSTOM_W_MAX_DEFAULT,
   CUSTOM_W_MIN_DEFAULT,
+  type StylePreset,
   type UserSettings,
 } from '../../types/bookmark'
 import { cn } from '../../utils/cn'
 import { clampCardHeight, clampCardWidth } from '../../utils/cardGrid'
+import {
+  applyStylePreset,
+  buildPresetExport,
+  mergeUserPresets,
+  parsePresetImport,
+  pickPresettable,
+} from '../../utils/stylePreset'
+import { localRepo } from '../../repositories/LocalRepository'
 import { toast } from '../../stores/useToastStore'
 import { GradientEditor } from '../GradientEditor'
+import { confirmDialog, promptDialog } from '../Dialog'
 import { DialogShell } from './DialogShell'
 
 /* ─────────────────────────────────────────────────────────────
@@ -101,6 +111,26 @@ const CARD_WIDTH_MODE_OPTIONS: Array<{
 ]
 
 /**
+ * 自定义档常用尺寸预设。第一项「标准」= CUSTOM_*_DEFAULT（点它 = 重置为默认）。
+ * preview 用于按钮里直接画一个示意小方块，让用户看比例。
+ */
+const CARD_CUSTOM_PRESETS: Array<{
+  key: string
+  label: string
+  desc: string
+  wMin: number
+  wMax: number
+  hMin: number
+  hMax: number
+}> = [
+  // 与原 standard 档（h-24）视觉一致；同时充当「重置」入口
+  { key: 'standard', label: '标准', desc: '宽 160~240 · 高 96（默认）', wMin: 160, wMax: 240, hMin: 96, hMax: 96 },
+  { key: 'compact', label: '紧凑', desc: '宽 140 · 高 80（最密）', wMin: 140, wMax: 140, hMin: 80, hMax: 80 },
+  { key: 'large', label: '大卡', desc: '宽 200~280 · 高 140（信息舒展）', wMin: 200, wMax: 280, hMin: 140, hMax: 140 },
+  { key: 'poster', label: '海报', desc: '宽 240 · 高 280（瀑布流式）', wMin: 240, wMax: 240, hMin: 280, hMax: 280 },
+]
+
+/**
  * 文字颜色预设：覆盖最常见的浅/深底配色场景。
  * 第一项 value 为空 = 清除自定义，回退到主题默认色。
  */
@@ -120,6 +150,7 @@ const TABS = [
   { key: 'background', label: '背景', icon: '🖼️' },
   { key: 'font', label: '文字颜色', icon: '🅰' },
   { key: 'layout', label: '内容布局', icon: '🧱' },
+  { key: 'presets', label: '预设', icon: '💾' },
 ] as const
 type StyleTab = (typeof TABS)[number]['key']
 
@@ -251,6 +282,184 @@ export function StyleDialog({
     void onUpdate({ cardCustomHeightMax: v })
   }
 
+  /**
+   * 应用一个常用预设：一次写入 4 个字段，同时清掉所有 draft（避免用户改了一半
+   * 又点预设时把半成品 draft 提交到错的字段上）。第一个预设是「标准」=默认值，
+   * 等价于「重置」。
+   */
+  const applyCustomPreset = (p: { wMin: number; wMax: number; hMin: number; hMax: number }) => {
+    setCustomWMinDraft(null)
+    setCustomWMaxDraft(null)
+    setCustomHMinDraft(null)
+    setCustomHMaxDraft(null)
+    void onUpdate({
+      cardCustomWidthMin: p.wMin,
+      cardCustomWidthMax: p.wMax,
+      cardCustomHeightMin: p.hMin,
+      cardCustomHeightMax: p.hMax,
+    })
+  }
+  /** 当前 W/H 与某个预设完全相等时高亮该预设 */
+  const matchedPresetKey = CARD_CUSTOM_PRESETS.find(
+    (p) =>
+      p.wMin === customWMin &&
+      p.wMax === customWMax &&
+      p.hMin === customHMin &&
+      p.hMax === customHMax,
+  )?.key
+
+  /* ───── 样式预设：列表 + 保存当前 + 重命名 / 删除 + 导入导出 ─────
+   * 列表数据从 localRepo.getPresets() 拉，第一次 mount 时异步加载，
+   * 之后所有 mutation（save / rename / delete / import / reset）都立即
+   * setStylePresets + 落盘，避免反复读盘。
+   */
+  const [stylePresets, setStylePresets] = useState<StylePreset[]>([])
+  const [presetsLoaded, setPresetsLoaded] = useState(false)
+  useEffect(() => {
+    void (async () => {
+      const list = await localRepo.getPresets()
+      setStylePresets(list)
+      setPresetsLoaded(true)
+    })()
+  }, [])
+
+  /** 把整组（含 builtin）写盘——LocalRepository.savePresets 内部会自动过滤掉 builtin */
+  const persistPresets = async (list: StylePreset[]): Promise<void> => {
+    setStylePresets(list)
+    await localRepo.savePresets(list)
+  }
+
+  /** 把当前 settings 视觉子集存为新 user 预设 */
+  const handleSaveCurrentAsPreset = async () => {
+    const name = await promptDialog({
+      title: '保存当前样式为预设',
+      message: '给这个预设起个名字（之后在列表里可以一键应用）',
+      placeholder: '例如：我的工作流',
+      confirmText: '保存',
+    })
+    if (!name) return
+    const now = Date.now()
+    const preset: StylePreset = {
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      kind: 'user',
+      settings: pickPresettable(settings),
+      createdAt: now,
+      updatedAt: now,
+    }
+    await persistPresets([...stylePresets, preset])
+    toast.success('已保存预设', preset.name)
+  }
+
+  /** 应用某个预设：spread 它的 settings 子集到当前 settings */
+  const handleApplyPreset = async (preset: StylePreset) => {
+    await applyStylePreset(preset, onUpdate)
+    toast.success('已应用预设', preset.name)
+  }
+
+  /** 重命名 user 预设（builtin 不允许） */
+  const handleRenamePreset = async (preset: StylePreset) => {
+    if (preset.kind !== 'user') return
+    const name = await promptDialog({
+      title: '重命名预设',
+      defaultValue: preset.name,
+      confirmText: '保存',
+    })
+    if (!name) return
+    const next = stylePresets.map((p) =>
+      p.id === preset.id ? { ...p, name: name.trim(), updatedAt: Date.now() } : p,
+    )
+    await persistPresets(next)
+  }
+
+  /** 删除 user 预设（带二次确认；builtin 不允许） */
+  const handleDeletePreset = async (preset: StylePreset) => {
+    if (preset.kind !== 'user') return
+    const ok = await confirmDialog({
+      title: `删除预设「${preset.name}」？`,
+      message: '删除后无法恢复（除非之前导出过 JSON）。',
+      danger: true,
+      confirmText: '删除',
+    })
+    if (!ok) return
+    await persistPresets(stylePresets.filter((p) => p.id !== preset.id))
+  }
+
+  /** 导出 user 预设为 JSON 文件并触发浏览器下载 */
+  const handleExportPresets = () => {
+    const userPresets = stylePresets.filter((p) => p.kind === 'user')
+    if (userPresets.length === 0) {
+      toast.warning('没有可导出的预设', '当前只有内置预设；先「保存当前样式为预设」再来')
+      return
+    }
+    const json = buildPresetExport(userPresets)
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `curio-presets-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    toast.success('已导出', `${userPresets.length} 个预设已保存为 JSON`)
+  }
+
+  /** 从用户选择的 JSON 文件导入预设，按 id 合并去重 */
+  const handleImportPresets = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json,application/json'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+      try {
+        const text = await file.text()
+        const incoming = parsePresetImport(text)
+        if (!incoming) {
+          toast.error('导入失败', 'JSON 格式不合法')
+          return
+        }
+        if (incoming.length === 0) {
+          toast.warning('未导入任何预设', '文件解析成功但里面没有有效预设')
+          return
+        }
+        const existingUser = stylePresets.filter((p) => p.kind === 'user')
+        const merged = mergeUserPresets(existingUser, incoming)
+        // 拼回 [...BUILTIN, ...merged]；BUILTIN 不变
+        const next = [
+          ...stylePresets.filter((p) => p.kind === 'builtin'),
+          ...merged,
+        ]
+        await persistPresets(next)
+        toast.success('已导入', `合并后共 ${merged.length} 个用户预设`)
+      } catch (err) {
+        toast.error('导入失败', err instanceof Error ? err.message : '未知错误')
+      }
+    }
+    input.click()
+  }
+
+  /** 清空所有 user 预设（带二次确认；builtin 不动） */
+  const handleResetPresets = async () => {
+    const userCount = stylePresets.filter((p) => p.kind === 'user').length
+    if (userCount === 0) {
+      toast.warning('没有可清除的预设', '当前只有内置预设')
+      return
+    }
+    const ok = await confirmDialog({
+      title: `清空全部 ${userCount} 个用户预设？`,
+      message: '此操作仅清除"用户预设"，内置预设不受影响；建议先「导出」备份。',
+      danger: true,
+      confirmText: '清空',
+    })
+    if (!ok) return
+    await localRepo.clearPresets()
+    setStylePresets(stylePresets.filter((p) => p.kind === 'builtin'))
+    toast.success('已清空用户预设')
+  }
+
+
   const handlePickPreset = (value: string) => {
     void onUpdate({ wallpaper: value })
     setCustomUrl('')
@@ -299,7 +508,22 @@ export function StyleDialog({
     >
       <div>
         {/* Tab 切换：把原本平铺的 4 个 section 收成 4 个 tab，避免弹窗过长 */}
-        <div className="flex gap-1 border-b border-slate-200 dark:border-slate-700 mb-4 -mx-5 px-5 overflow-x-auto">
+        {/*
+          Tab 切换：把原本平铺的 4 个 section 收成 4 个 tab，避免弹窗过长。
+          - overflow-x-auto 仅给 4+ tab 的横向兜底；同时关 overflow-y，否则 macOS
+            上系统滚动条样式（::-webkit-scrollbar 半透明 thumb）会在 y 方向画出
+            一条多余的竖滚动条（实际内容并未溢出）。
+          - 桌面端尽量隐藏滚动条本体（依靠左右轻微 padding 暗示可滚），
+            tab 按钮 hover/focus 时浏览器仍能正常滚到可见区。
+        */}
+        <div
+          className={cn(
+            'flex gap-1 border-b border-slate-200 dark:border-slate-700 mb-4 -mx-5 px-5',
+            'overflow-x-auto overflow-y-hidden',
+            // 隐藏滚动条本身（Firefox + WebKit）；不影响滚动能力
+            '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+          )}
+        >
           {TABS.map((t) => {
             const active = activeTab === t.key
             return (
@@ -796,11 +1020,108 @@ export function StyleDialog({
           {/* 自定义档专属：宽 / 高的 min / max 输入。仅当 cardSize === 'custom' 时展示 */}
           {settings.cardSize === 'custom' && (
             <div className="mb-3 rounded-lg border border-slate-200/70 dark:border-slate-700/60 p-3 bg-slate-50/50 dark:bg-slate-800/30">
-              <div className="text-sm text-slate-700 dark:text-slate-200 mb-2">
-                自定义尺寸
-                <span className="ml-1 text-[11px] text-slate-400">
-                  （min 与 max 相同则为固定值）
+              <div className="text-sm text-slate-700 dark:text-slate-200 mb-2 flex items-center justify-between gap-2">
+                <span>
+                  自定义尺寸
+                  <span className="ml-1 text-[11px] text-slate-400">
+                    （min 与 max 相同则为固定值）
+                  </span>
                 </span>
+              </div>
+
+              {/* 实时预览：直接按 draft / 实际值画一个 mock 卡片，让用户在调输入时立即看到效果 */}
+              <div className="mb-3 px-3 py-3 rounded-md bg-white/60 dark:bg-slate-900/40 border border-dashed border-slate-200 dark:border-slate-700 flex items-center justify-center min-h-[120px]">
+                {(() => {
+                  // 用 draft 值（如果有）做预览，让用户敲入过程中就能看到效果，不必等 blur
+                  const previewWMin = clampCardWidth(
+                    customWMinDraft !== null ? Number(customWMinDraft) : customWMin,
+                    customWMin,
+                  )
+                  const previewWMax = Math.max(
+                    previewWMin,
+                    clampCardWidth(
+                      customWMaxDraft !== null ? Number(customWMaxDraft) : customWMax,
+                      customWMax,
+                    ),
+                  )
+                  const previewHMin = clampCardHeight(
+                    customHMinDraft !== null ? Number(customHMinDraft) : customHMin,
+                    customHMin,
+                  )
+                  const previewHMax = Math.max(
+                    previewHMin,
+                    clampCardHeight(
+                      customHMaxDraft !== null ? Number(customHMaxDraft) : customHMax,
+                      customHMax,
+                    ),
+                  )
+                  // 容器内最大可用宽度（弹窗内容宽 ≈ 520，刨除 padding/边距 ≈ 460）；
+                  // 预览卡片宽度取 min(previewWMax, 220)，避免预览把弹窗撑爆
+                  const renderW = Math.min(previewWMax, 220)
+                  // 高度按 min 显示（min === max 时即为固定值；min < max 时呈现"最小态"）
+                  return (
+                    <div
+                      className={cn(
+                        'card flex flex-col gap-2.5 p-3.5 overflow-hidden',
+                        'border border-slate-200/80 dark:border-slate-700/80 shadow-sm',
+                      )}
+                      style={{
+                        width: renderW,
+                        minHeight: previewHMin,
+                        maxHeight: previewHMax,
+                      }}
+                    >
+                      <div className="flex items-start gap-2">
+                        <div className="w-9 h-9 rounded-lg bg-brand/20 flex items-center justify-center text-brand text-base shrink-0">
+                          🔖
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold leading-snug line-clamp-2 text-slate-800 dark:text-slate-100">
+                            预览：示例书签
+                          </div>
+                          <div className="text-[11px] text-slate-400 truncate mt-0.5">
+                            example.com
+                          </div>
+                        </div>
+                      </div>
+                      {/* 高度自适应时（min < max）显示"备注"占位，让用户看出高度上限 */}
+                      {previewHMax > previewHMin && (
+                        <div className="text-xs leading-snug line-clamp-2 text-slate-500 dark:text-slate-400">
+                          备注内容会自动撑高，但不超过 maxHeight。
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
+              </div>
+
+              {/* 预设按钮组（含「重置」语义：点「标准」= 回默认值） */}
+              <div className="mb-3">
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-1.5">
+                  常用预设
+                  <span className="ml-1 text-slate-400/70">（点「标准」可重置为默认）</span>
+                </div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {CARD_CUSTOM_PRESETS.map((p) => {
+                    const active = matchedPresetKey === p.key
+                    return (
+                      <button
+                        key={p.key}
+                        type="button"
+                        onClick={() => applyCustomPreset(p)}
+                        title={p.desc}
+                        className={cn(
+                          'px-2 py-1.5 text-xs rounded-md border transition-all text-center',
+                          active
+                            ? 'border-brand bg-brand/5 text-brand font-medium ring-2 ring-brand/20 dark:bg-brand/10'
+                            : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-brand/40 hover:bg-slate-50 dark:hover:bg-slate-700/40',
+                        )}
+                      >
+                        {p.label}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
               {/* 宽度行 */}
               <div className="flex items-center gap-2 mb-2">
@@ -998,6 +1319,166 @@ export function StyleDialog({
               </div>
             </div>
           </label>
+        </section>
+        )}
+
+        {/* 样式预设 */}
+        {activeTab === 'presets' && (
+        <section className="rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-white/55 dark:bg-slate-900/45 p-4">
+          {/* 顶部：保存当前 */}
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <div>
+              <div className="text-sm text-slate-700 dark:text-slate-200 font-medium">
+                我的样式预设
+              </div>
+              <div className="text-[11px] text-slate-400 mt-0.5">
+                把当前样式存为预设，之后一键切换；导出 JSON 可跨设备同步或分享
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleSaveCurrentAsPreset()}
+              className={cn(
+                'px-3 py-1.5 text-xs rounded font-medium transition-colors shrink-0',
+                'bg-brand text-white hover:bg-brand-600',
+              )}
+            >
+              + 保存当前
+            </button>
+          </div>
+
+          {/* 预设列表 */}
+          {!presetsLoaded ? (
+            <div className="text-[11px] text-slate-400 py-6 text-center">加载中…</div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              {stylePresets.map((p) => {
+                const isBuiltin = p.kind === 'builtin'
+                // 简单视觉预览：用 wallpaper（如果是 linear-gradient / 颜色）+ fontColor 拼一个小色块
+                const previewBg = p.settings.wallpaper || 'linear-gradient(135deg, #f1f5f9, #e0e7ff)'
+                const previewFont = p.settings.fontColor || (p.settings.theme === 'dark' ? '#f8fafc' : '#0f172a')
+                return (
+                  <div
+                    key={p.id}
+                    className={cn(
+                      'group relative rounded-lg border p-2.5 transition-all',
+                      'border-slate-200 dark:border-slate-700 bg-white/40 dark:bg-slate-800/30',
+                      'hover:border-brand/40 hover:shadow-sm',
+                    )}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      {/* 色块预览 */}
+                      <div
+                        className="w-12 h-12 rounded-md border border-slate-200 dark:border-slate-700 shrink-0 overflow-hidden flex items-center justify-center text-base font-semibold"
+                        style={{ backgroundImage: previewBg, backgroundSize: 'cover', color: previewFont }}
+                        title="样式预览"
+                      >
+                        Aa
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-medium text-slate-800 dark:text-slate-100 truncate flex items-center gap-1">
+                          {p.name}
+                          {isBuiltin && (
+                            <span
+                              className="text-[10px] text-slate-400"
+                              title="内置预设，无法删除或重命名"
+                            >
+                              🔒
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-slate-400 mt-0.5">
+                          {p.settings.cardSize ?? 'standard'} · {p.settings.theme ?? 'auto'}
+                        </div>
+                      </div>
+                    </div>
+                    {/* 操作行 */}
+                    <div className="flex items-center gap-1 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleApplyPreset(p)}
+                        className={cn(
+                          'flex-1 px-2 py-1 text-[11px] rounded transition-colors',
+                          'bg-brand/10 text-brand hover:bg-brand/20',
+                        )}
+                      >
+                        应用
+                      </button>
+                      {!isBuiltin && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void handleRenamePreset(p)}
+                            title="重命名"
+                            className={cn(
+                              'px-2 py-1 text-[11px] rounded transition-colors',
+                              'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700/40',
+                            )}
+                          >
+                            ✎
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeletePreset(p)}
+                            title="删除"
+                            className={cn(
+                              'px-2 py-1 text-[11px] rounded transition-colors',
+                              'text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10',
+                            )}
+                          >
+                            ✕
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* 导入 / 导出 / 重置 工具栏 */}
+          <div className="flex items-center gap-2 pt-3 border-t border-slate-100 dark:border-slate-700/60">
+            <button
+              type="button"
+              onClick={handleExportPresets}
+              className={cn(
+                'px-3 py-1.5 text-xs rounded transition-colors',
+                'border border-slate-200 dark:border-slate-700',
+                'text-slate-600 dark:text-slate-300',
+                'hover:bg-slate-100 dark:hover:bg-slate-700/60',
+              )}
+            >
+              📤 导出全部
+            </button>
+            <button
+              type="button"
+              onClick={handleImportPresets}
+              className={cn(
+                'px-3 py-1.5 text-xs rounded transition-colors',
+                'border border-slate-200 dark:border-slate-700',
+                'text-slate-600 dark:text-slate-300',
+                'hover:bg-slate-100 dark:hover:bg-slate-700/60',
+              )}
+            >
+              📥 从 JSON 导入
+            </button>
+            <div className="flex-1" />
+            <button
+              type="button"
+              onClick={() => void handleResetPresets()}
+              className={cn(
+                'px-3 py-1.5 text-xs rounded transition-colors',
+                'text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10',
+              )}
+            >
+              清空用户预设
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
+            预设包含主题 / 背景 / 字色 / 卡片布局四类设置；仅存于本机，
+            不随浏览器账号同步（避免壁纸 base64 占用 sync 配额）。
+          </p>
         </section>
         )}
       </div>
