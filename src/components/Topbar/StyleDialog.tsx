@@ -1,6 +1,20 @@
 import { useState } from 'react'
-import type { UserSettings } from '../../types/bookmark'
+import {
+  CARD_HEIGHT_MAX_PX,
+  CARD_HEIGHT_MIN_PX,
+  CARD_WIDTH_FIXED_DEFAULT,
+  CARD_WIDTH_FLUID_MAX_DEFAULT,
+  CARD_WIDTH_FLUID_MIN_DEFAULT,
+  CARD_WIDTH_MAX_PX,
+  CARD_WIDTH_MIN_PX,
+  CUSTOM_H_MAX_DEFAULT,
+  CUSTOM_H_MIN_DEFAULT,
+  CUSTOM_W_MAX_DEFAULT,
+  CUSTOM_W_MIN_DEFAULT,
+  type UserSettings,
+} from '../../types/bookmark'
 import { cn } from '../../utils/cn'
+import { clampCardHeight, clampCardWidth } from '../../utils/cardGrid'
 import { toast } from '../../stores/useToastStore'
 import { GradientEditor } from '../GradientEditor'
 import { DialogShell } from './DialogShell'
@@ -58,7 +72,7 @@ const CARD_SIZE_OPTIONS: Array<{
 }> = [
   { key: 'compact', label: '精简', desc: '只显示图标和名称，hover 高亮' },
   { key: 'standard', label: '标准', desc: '更紧凑，含域名 / 备注 / 标签' },
-  { key: 'large', label: '较大', desc: '默认尺寸，信息密度均衡' },
+  { key: 'custom', label: '自定义', desc: '自由设置卡片宽 / 高的最小与最大值' },
 ]
 
 const CARD_ICON_SIZE_OPTIONS: Array<{
@@ -68,6 +82,22 @@ const CARD_ICON_SIZE_OPTIONS: Array<{
 }> = [
   { key: 'small', label: '较小', desc: '接近浏览器 favicon 的视觉权重' },
   { key: 'standard', label: '标准', desc: '与卡片尺寸匹配的默认大小' },
+]
+
+/**
+ * 「标准档」卡片宽度策略选项；仅当 cardSize === 'standard' 时展示。
+ * - responsive：保留 2/3/4/5/6 列响应式断点（历史行为，默认）
+ * - fluid    ：固定列数，每列宽度在 [min, max] 之间伸缩
+ * - fixed    ：固定卡片宽度，列数随容器宽度自动变化（瀑布流式）
+ */
+const CARD_WIDTH_MODE_OPTIONS: Array<{
+  key: NonNullable<UserSettings['cardWidthMode']>
+  label: string
+  desc: string
+}> = [
+  { key: 'responsive', label: '响应式（默认）', desc: '一行 2~6 列，按屏宽自动断点切换' },
+  { key: 'fluid', label: '固定列数 + 伸缩', desc: '保留断点列数，每列宽度在最小/最大之间拉伸' },
+  { key: 'fixed', label: '固定宽度（瀑布流）', desc: '单卡宽度固定，列数随屏宽变化' },
 ]
 
 /**
@@ -130,6 +160,95 @@ export function StyleDialog({
   const handlePickFontColor = (value: string) => {
     setFontHexDraft(null)
     void onUpdate({ fontColor: value })
+  }
+
+  /* ───── 标准档卡片宽度（fluid / fixed）draft + commit 助手 ─────
+   * 数字输入沿用 fontHex 的 draft 模式：用户敲入过程中的中间态不立即写 settings，
+   * 只在 blur / Enter 时 clamp + commit。fluid min/max 还要保证 min <= max。
+   */
+  const widthMode = settings.cardWidthMode ?? 'responsive'
+  const fluidMin = settings.cardWidthMin ?? CARD_WIDTH_FLUID_MIN_DEFAULT
+  const fluidMax = settings.cardWidthMax ?? CARD_WIDTH_FLUID_MAX_DEFAULT
+  const fixedWidth = settings.cardWidthFixed ?? CARD_WIDTH_FIXED_DEFAULT
+  const [fluidMinDraft, setFluidMinDraft] = useState<string | null>(null)
+  const [fluidMaxDraft, setFluidMaxDraft] = useState<string | null>(null)
+  const [fixedWidthDraft, setFixedWidthDraft] = useState<string | null>(null)
+
+  const commitFluidMin = () => {
+    if (fluidMinDraft === null) return
+    const v = clampCardWidth(Number(fluidMinDraft), CARD_WIDTH_FLUID_MIN_DEFAULT)
+    setFluidMinDraft(null)
+    // min 提到当前 max 之上时把 max 也抬起来，避免存下非法范围
+    const nextMax = Math.max(v, fluidMax)
+    void onUpdate(
+      nextMax === fluidMax
+        ? { cardWidthMin: v }
+        : { cardWidthMin: v, cardWidthMax: nextMax },
+    )
+  }
+  const commitFluidMax = () => {
+    if (fluidMaxDraft === null) return
+    const raw = clampCardWidth(Number(fluidMaxDraft), CARD_WIDTH_FLUID_MAX_DEFAULT)
+    // max 被压到 min 之下时回弹到 min，保持 min <= max
+    const v = Math.max(raw, fluidMin)
+    setFluidMaxDraft(null)
+    void onUpdate({ cardWidthMax: v })
+  }
+  const commitFixedWidth = () => {
+    if (fixedWidthDraft === null) return
+    const v = clampCardWidth(Number(fixedWidthDraft), CARD_WIDTH_FIXED_DEFAULT)
+    setFixedWidthDraft(null)
+    void onUpdate({ cardWidthFixed: v })
+  }
+
+  /* ───── 自定义档（custom）4 个 W/H min/max 输入 draft + commit ─────
+   * 与 fluid/fixed 同款 draft 模式；min > max 时自动把 max 抬到 min（仅 commit min 时触发）。
+   * 高度复用 clampCardHeight；宽度复用 clampCardWidth。
+   */
+  const customWMin = settings.cardCustomWidthMin ?? CUSTOM_W_MIN_DEFAULT
+  const customWMax = settings.cardCustomWidthMax ?? CUSTOM_W_MAX_DEFAULT
+  const customHMin = settings.cardCustomHeightMin ?? CUSTOM_H_MIN_DEFAULT
+  const customHMax = settings.cardCustomHeightMax ?? CUSTOM_H_MAX_DEFAULT
+  const [customWMinDraft, setCustomWMinDraft] = useState<string | null>(null)
+  const [customWMaxDraft, setCustomWMaxDraft] = useState<string | null>(null)
+  const [customHMinDraft, setCustomHMinDraft] = useState<string | null>(null)
+  const [customHMaxDraft, setCustomHMaxDraft] = useState<string | null>(null)
+
+  const commitCustomWMin = () => {
+    if (customWMinDraft === null) return
+    const v = clampCardWidth(Number(customWMinDraft), CUSTOM_W_MIN_DEFAULT)
+    setCustomWMinDraft(null)
+    const nextMax = Math.max(v, customWMax)
+    void onUpdate(
+      nextMax === customWMax
+        ? { cardCustomWidthMin: v }
+        : { cardCustomWidthMin: v, cardCustomWidthMax: nextMax },
+    )
+  }
+  const commitCustomWMax = () => {
+    if (customWMaxDraft === null) return
+    const raw = clampCardWidth(Number(customWMaxDraft), CUSTOM_W_MAX_DEFAULT)
+    const v = Math.max(raw, customWMin)
+    setCustomWMaxDraft(null)
+    void onUpdate({ cardCustomWidthMax: v })
+  }
+  const commitCustomHMin = () => {
+    if (customHMinDraft === null) return
+    const v = clampCardHeight(Number(customHMinDraft), CUSTOM_H_MIN_DEFAULT)
+    setCustomHMinDraft(null)
+    const nextMax = Math.max(v, customHMax)
+    void onUpdate(
+      nextMax === customHMax
+        ? { cardCustomHeightMin: v }
+        : { cardCustomHeightMin: v, cardCustomHeightMax: nextMax },
+    )
+  }
+  const commitCustomHMax = () => {
+    if (customHMaxDraft === null) return
+    const raw = clampCardHeight(Number(customHMaxDraft), CUSTOM_H_MAX_DEFAULT)
+    const v = Math.max(raw, customHMin)
+    setCustomHMaxDraft(null)
+    void onUpdate({ cardCustomHeightMax: v })
   }
 
   const handlePickPreset = (value: string) => {
@@ -536,6 +655,260 @@ export function StyleDialog({
               })}
             </div>
           </div>
+          {/* 标准档专属：卡片宽度策略（fluid 伸缩 / fixed 瀑布流），紧跟书签卡片尺寸下面 */}
+          {(settings.cardSize ?? 'standard') === 'standard' && (
+            <div className="mb-3 rounded-lg border border-slate-200/70 dark:border-slate-700/60 p-3 bg-slate-50/50 dark:bg-slate-800/30">
+              <div className="text-sm text-slate-700 dark:text-slate-200 mb-2">
+                卡片宽度
+                <span className="ml-1 text-[11px] text-slate-400">
+                  （仅标准档生效）
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                {CARD_WIDTH_MODE_OPTIONS.map((opt) => {
+                  const active = widthMode === opt.key
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => void onUpdate({ cardWidthMode: opt.key })}
+                      className={cn(
+                        'text-left px-3 py-2 rounded-lg border transition-all',
+                        active
+                          ? 'border-brand bg-brand/5 ring-2 ring-brand/20 dark:bg-brand/10'
+                          : 'border-slate-200 dark:border-slate-700 hover:border-brand/40 hover:bg-slate-50 dark:hover:bg-slate-700/40',
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          'text-xs font-medium',
+                          active
+                            ? 'text-brand'
+                            : 'text-slate-700 dark:text-slate-200',
+                        )}
+                      >
+                        {opt.label}
+                      </div>
+                      <div className="mt-0.5 text-[10px] leading-relaxed text-slate-400">
+                        {opt.desc}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* fluid：min / max 输入 */}
+              {widthMode === 'fluid' && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <label className="text-[11px] text-slate-500 dark:text-slate-400 w-16 shrink-0">
+                      最小宽度
+                    </label>
+                    <input
+                      type="number"
+                      min={CARD_WIDTH_MIN_PX}
+                      max={CARD_WIDTH_MAX_PX}
+                      step={4}
+                      value={fluidMinDraft ?? fluidMin}
+                      onChange={(e) => setFluidMinDraft(e.target.value)}
+                      onBlur={commitFluidMin}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur()
+                        if (e.key === 'Escape') setFluidMinDraft(null)
+                      }}
+                      className={cn(
+                        'w-20 px-2 py-1 text-xs tabular-nums rounded',
+                        'bg-white dark:bg-slate-900',
+                        'border border-slate-200 dark:border-slate-700',
+                        'outline-none focus:border-brand focus:ring-1 focus:ring-brand/30',
+                      )}
+                    />
+                    <span className="text-[11px] text-slate-400">px</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[11px] text-slate-500 dark:text-slate-400 w-16 shrink-0">
+                      最大宽度
+                    </label>
+                    <input
+                      type="number"
+                      min={CARD_WIDTH_MIN_PX}
+                      max={CARD_WIDTH_MAX_PX}
+                      step={4}
+                      value={fluidMaxDraft ?? fluidMax}
+                      onChange={(e) => setFluidMaxDraft(e.target.value)}
+                      onBlur={commitFluidMax}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur()
+                        if (e.key === 'Escape') setFluidMaxDraft(null)
+                      }}
+                      className={cn(
+                        'w-20 px-2 py-1 text-xs tabular-nums rounded',
+                        'bg-white dark:bg-slate-900',
+                        'border border-slate-200 dark:border-slate-700',
+                        'outline-none focus:border-brand focus:ring-1 focus:ring-brand/30',
+                      )}
+                    />
+                    <span className="text-[11px] text-slate-400">px</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    列数仍按断点切换（2~6 列），每列宽度被夹在 {fluidMin}~{fluidMax}px。
+                    若窗口窄到放不下，可能出现横向滚动。
+                  </p>
+                </div>
+              )}
+
+              {/* fixed：单卡固定宽度 */}
+              {widthMode === 'fixed' && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <label className="text-[11px] text-slate-500 dark:text-slate-400 w-16 shrink-0">
+                      卡片宽度
+                    </label>
+                    <input
+                      type="number"
+                      min={CARD_WIDTH_MIN_PX}
+                      max={CARD_WIDTH_MAX_PX}
+                      step={4}
+                      value={fixedWidthDraft ?? fixedWidth}
+                      onChange={(e) => setFixedWidthDraft(e.target.value)}
+                      onBlur={commitFixedWidth}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur()
+                        if (e.key === 'Escape') setFixedWidthDraft(null)
+                      }}
+                      className={cn(
+                        'w-20 px-2 py-1 text-xs tabular-nums rounded',
+                        'bg-white dark:bg-slate-900',
+                        'border border-slate-200 dark:border-slate-700',
+                        'outline-none focus:border-brand focus:ring-1 focus:ring-brand/30',
+                      )}
+                    />
+                    <span className="text-[11px] text-slate-400">px</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    每张卡片固定 {fixedWidth}px，列数 = ⌊容器宽 / {fixedWidth}px⌋，
+                    随窗口宽度无级变化（类似瀑布流）。
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+          {/* 自定义档专属：宽 / 高的 min / max 输入。仅当 cardSize === 'custom' 时展示 */}
+          {settings.cardSize === 'custom' && (
+            <div className="mb-3 rounded-lg border border-slate-200/70 dark:border-slate-700/60 p-3 bg-slate-50/50 dark:bg-slate-800/30">
+              <div className="text-sm text-slate-700 dark:text-slate-200 mb-2">
+                自定义尺寸
+                <span className="ml-1 text-[11px] text-slate-400">
+                  （min 与 max 相同则为固定值）
+                </span>
+              </div>
+              {/* 宽度行 */}
+              <div className="flex items-center gap-2 mb-2">
+                <label className="text-[11px] text-slate-500 dark:text-slate-400 w-10 shrink-0">
+                  宽度
+                </label>
+                <input
+                  type="number"
+                  min={CARD_WIDTH_MIN_PX}
+                  max={CARD_WIDTH_MAX_PX}
+                  step={4}
+                  value={customWMinDraft ?? customWMin}
+                  onChange={(e) => setCustomWMinDraft(e.target.value)}
+                  onBlur={commitCustomWMin}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur()
+                    if (e.key === 'Escape') setCustomWMinDraft(null)
+                  }}
+                  className={cn(
+                    'w-20 px-2 py-1 text-xs tabular-nums rounded',
+                    'bg-white dark:bg-slate-900',
+                    'border border-slate-200 dark:border-slate-700',
+                    'outline-none focus:border-brand focus:ring-1 focus:ring-brand/30',
+                  )}
+                  aria-label="卡片最小宽度"
+                />
+                <span className="text-[11px] text-slate-400">~</span>
+                <input
+                  type="number"
+                  min={CARD_WIDTH_MIN_PX}
+                  max={CARD_WIDTH_MAX_PX}
+                  step={4}
+                  value={customWMaxDraft ?? customWMax}
+                  onChange={(e) => setCustomWMaxDraft(e.target.value)}
+                  onBlur={commitCustomWMax}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur()
+                    if (e.key === 'Escape') setCustomWMaxDraft(null)
+                  }}
+                  className={cn(
+                    'w-20 px-2 py-1 text-xs tabular-nums rounded',
+                    'bg-white dark:bg-slate-900',
+                    'border border-slate-200 dark:border-slate-700',
+                    'outline-none focus:border-brand focus:ring-1 focus:ring-brand/30',
+                  )}
+                  aria-label="卡片最大宽度"
+                />
+                <span className="text-[11px] text-slate-400">px</span>
+              </div>
+              {/* 高度行 */}
+              <div className="flex items-center gap-2 mb-2">
+                <label className="text-[11px] text-slate-500 dark:text-slate-400 w-10 shrink-0">
+                  高度
+                </label>
+                <input
+                  type="number"
+                  min={CARD_HEIGHT_MIN_PX}
+                  max={CARD_HEIGHT_MAX_PX}
+                  step={4}
+                  value={customHMinDraft ?? customHMin}
+                  onChange={(e) => setCustomHMinDraft(e.target.value)}
+                  onBlur={commitCustomHMin}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur()
+                    if (e.key === 'Escape') setCustomHMinDraft(null)
+                  }}
+                  className={cn(
+                    'w-20 px-2 py-1 text-xs tabular-nums rounded',
+                    'bg-white dark:bg-slate-900',
+                    'border border-slate-200 dark:border-slate-700',
+                    'outline-none focus:border-brand focus:ring-1 focus:ring-brand/30',
+                  )}
+                  aria-label="卡片最小高度"
+                />
+                <span className="text-[11px] text-slate-400">~</span>
+                <input
+                  type="number"
+                  min={CARD_HEIGHT_MIN_PX}
+                  max={CARD_HEIGHT_MAX_PX}
+                  step={4}
+                  value={customHMaxDraft ?? customHMax}
+                  onChange={(e) => setCustomHMaxDraft(e.target.value)}
+                  onBlur={commitCustomHMax}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur()
+                    if (e.key === 'Escape') setCustomHMaxDraft(null)
+                  }}
+                  className={cn(
+                    'w-20 px-2 py-1 text-xs tabular-nums rounded',
+                    'bg-white dark:bg-slate-900',
+                    'border border-slate-200 dark:border-slate-700',
+                    'outline-none focus:border-brand focus:ring-1 focus:ring-brand/30',
+                  )}
+                  aria-label="卡片最大高度"
+                />
+                <span className="text-[11px] text-slate-400">px</span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                列数 = ⌊容器宽 / {customWMin}px⌋；
+                {customWMin === customWMax
+                  ? `每张卡片固定 ${customWMin}px 宽。`
+                  : `每列宽度在 ${customWMin}~${customWMax}px 间自动放大。`}
+                {customHMin === customHMax
+                  ? `高度固定 ${customHMin}px。`
+                  : `高度随内容在 ${customHMin}~${customHMax}px 间自适应。`}
+              </p>
+            </div>
+          )}
           <div className="mb-3">
             <div className="text-sm text-slate-700 dark:text-slate-200 mb-2">
               图标尺寸

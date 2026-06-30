@@ -146,10 +146,12 @@ describe('pushSettings / pullSettingsForce', () => {
 
   it('pullForce 拿回 push 上去的内容（圆环）', async () => {
     await enable()
-    await pushSettings(mkSettings({ theme: 'dark', cardSize: 'large' }))
+    // 用 'standard' 而不是 'large'：'large' 已在 v0.22.x 从 cardSize 联合移除，
+    // 历史值现在由 sanitizeSettings 中的迁移兜底转成 'custom'（见下方专项测试）。
+    await pushSettings(mkSettings({ theme: 'dark', cardSize: 'standard' }))
     const r = await pullSettingsForce()
     expect(r.applied?.theme).toBe('dark')
-    expect(r.applied?.cardSize).toBe('large')
+    expect(r.applied?.cardSize).toBe('standard')
   })
 
   it('sanitizeSettings 过滤掉远端的 unknown / 非法类型字段', async () => {
@@ -170,6 +172,26 @@ describe('pushSettings / pullSettingsForce', () => {
     expect(r.applied?.theme).toBe('dark')
     expect('cardSize' in (r.applied ?? {})).toBe(false)
     expect('unknownField' in (r.applied ?? {})).toBe(false)
+  })
+
+  it('v0.22.x 迁移兜底：远端旧版推上来的 cardSize:"large" 应用前被改写成 custom + 默认 W/H', async () => {
+    // 场景：A 设备升级到新版（custom 档），B 设备还在旧版（cardSize='large'）。
+    // B 推上去的 payload 是 'large'，A 拉下来时 sanitizeSettings 兜底应该把它
+    // 改写成 'custom'，并注入与 LocalRepository.getSettings 同款的 192×128 默认。
+    await enable()
+    await chrome.storage.sync.set({
+      [KEY_SETTINGS_PAYLOAD]: {
+        version: 1,
+        ts: Date.now(),
+        settings: { cardSize: 'large' },
+      },
+    })
+    const r = await pullSettingsForce()
+    expect(r.applied?.cardSize).toBe('custom')
+    expect(r.applied?.cardCustomWidthMin).toBe(192)
+    expect(r.applied?.cardCustomWidthMax).toBe(192)
+    expect(r.applied?.cardCustomHeightMin).toBe(128)
+    expect(r.applied?.cardCustomHeightMax).toBe(128)
   })
 })
 

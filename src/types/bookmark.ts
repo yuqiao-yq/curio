@@ -55,12 +55,17 @@ export interface UserSettings {
    * 书签卡尺寸档位：
    * - compact 精简：只图标 + 名称，hover 出方形阴影；适合大量书签速览
    * - standard 标准：默认尺寸（带域名/备注/tags）
-   * - large 大：信息更舒展
+   * - custom 自定义：宽/高由 cardCustomWidthMin/Max/HeightMin/Max 控制；
+   *   min === max 即为固定值，min < max 时宽度走 minmax+auto-fill、
+   *   高度随内容在 [min, max] 之间撑开
    *
-   * v0.21.19 之前是 'sm' | 'md' | 'lg'，对应：sm=标准、md=大、lg=已废弃；
-   * LocalRepository.getSettings 会把旧值迁移到新枚举。
+   * 历史：
+   *   v0.21.19 之前是 'sm' | 'md' | 'lg'：sm=标准、md=大、lg=大。
+   *   v0.21.19~v0.22.x：'compact' | 'standard' | 'large'，large 视觉等价于原 md。
+   *   v0.22.x 起：large 被替换为 custom；老 large 在 LocalRepository.getSettings
+   *   中自动迁移成 custom + 192×128（与原 large 视觉接近）。
    */
-  cardSize: 'compact' | 'standard' | 'large'
+  cardSize: 'compact' | 'standard' | 'custom'
   /**
    * 书签卡片图标尺寸：
    * - small 较小：图标和图标底图层同步缩小（≈ 浏览器 favicon 视觉权重）
@@ -118,6 +123,41 @@ export interface UserSettings {
   cardGlass?: boolean
 
   /**
+   * 「标准档」书签卡片的宽度策略（仅在 cardSize === 'standard' 时生效）。
+   * - 'responsive'（默认 / undefined）：保持现有响应式断点 2/3/4/5/6 列，
+   *   每列宽度由屏宽决定，老用户零感知。
+   * - 'fluid'：保留响应式列数，但每列宽度被夹在 [min, max] 之间，
+   *   屏宽变化时列数不变，仅卡片宽度伸缩。
+   * - 'fixed'：固定单卡宽度（auto-fill），列数随容器宽自动变化，
+   *   类似瀑布流；与 compact 档同款机制，只是宽度由用户决定。
+   *
+   * compact / large 档忽略此字段，行为不变。
+   */
+  cardWidthMode?: 'responsive' | 'fluid' | 'fixed'
+  /** fluid 模式下的最小列宽（px）。范围 [CARD_WIDTH_MIN_PX, CARD_WIDTH_MAX_PX]，默认 CARD_WIDTH_FLUID_MIN_DEFAULT */
+  cardWidthMin?: number
+  /** fluid 模式下的最大列宽（px）。约束：cardWidthMin <= cardWidthMax，默认 CARD_WIDTH_FLUID_MAX_DEFAULT */
+  cardWidthMax?: number
+  /** fixed 模式下的固定卡片宽度（px），默认 CARD_WIDTH_FIXED_DEFAULT */
+  cardWidthFixed?: number
+
+  /**
+   * 「自定义档」卡片宽度 / 高度（仅在 cardSize === 'custom' 时生效）。
+   * - min === max → 固定值；min < max → 自适应：
+   *   · 宽度：CSS Grid 走 `repeat(auto-fill, minmax(min, max))`，
+   *     列数 = ⌊容器宽 / min⌋，每列宽度在 [min, max] 之间自动放大；
+   *   · 高度：卡片用 inline `min-height/max-height + overflow:hidden`，
+   *     备注/tags 多时撑到 max，少时收到 min。
+   *
+   * 默认与边界见 CARD_WIDTH_MIN_PX / CARD_WIDTH_MAX_PX、
+   * CARD_HEIGHT_MIN_PX / CARD_HEIGHT_MAX_PX 和 CUSTOM_*_DEFAULT。
+   */
+  cardCustomWidthMin?: number
+  cardCustomWidthMax?: number
+  cardCustomHeightMin?: number
+  cardCustomHeightMax?: number
+
+  /**
    * 「同步到浏览器书签」目标根：
    * - 'bookmarks_bar'（默认）→ 书签栏（顶部常用）
    * - 'other'              → 其他书签（不在书签栏可见）
@@ -147,6 +187,27 @@ export interface UserSettings {
 export const SIDEBAR_WIDTH_MIN = 180
 export const SIDEBAR_WIDTH_MAX = 480
 export const SIDEBAR_WIDTH_DEFAULT = 240
+
+/**
+ * 「标准档」卡片宽度边界与默认值。
+ * UI / 工具函数共用，保证 clamp 行为与 fallback 一致。
+ */
+export const CARD_WIDTH_MIN_PX = 96
+export const CARD_WIDTH_MAX_PX = 480
+export const CARD_WIDTH_FLUID_MIN_DEFAULT = 140
+export const CARD_WIDTH_FLUID_MAX_DEFAULT = 240
+export const CARD_WIDTH_FIXED_DEFAULT = 180
+
+/**
+ * 「自定义档」高度边界与默认值。
+ * 宽度边界复用 CARD_WIDTH_MIN_PX / CARD_WIDTH_MAX_PX。
+ */
+export const CARD_HEIGHT_MIN_PX = 64
+export const CARD_HEIGHT_MAX_PX = 400
+export const CUSTOM_W_MIN_DEFAULT = 160
+export const CUSTOM_W_MAX_DEFAULT = 240
+export const CUSTOM_H_MIN_DEFAULT = 96
+export const CUSTOM_H_MAX_DEFAULT = 160
 
 /** 导入导出数据 */
 export interface ExportData {

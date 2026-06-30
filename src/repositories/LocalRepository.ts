@@ -136,18 +136,34 @@ export class LocalRepository implements BookmarkRepository {
   // ---------- 设置 ----------
   async getSettings(): Promise<UserSettings> {
     const result = await browser.storage.local.get(KEYS.settings)
-    const merged = { ...DEFAULT_SETTINGS, ...(result[KEYS.settings] ?? {}) }
-    // v0.21.19 cardSize 重命名 + 去掉旧 lg 档；老用户存盘还可能是 sm/md/lg
-    // 映射：sm(老h-24=小) → standard、md(老h-32=中) → large、lg(老h-36=大，已废弃) → large
-    const legacyMap: Record<string, UserSettings['cardSize']> = {
-      sm: 'standard',
-      md: 'large',
-      lg: 'large',
+    const merged = { ...DEFAULT_SETTINGS, ...(result[KEYS.settings] ?? {}) } as UserSettings & {
+      cardSize?: string
+      cardCustomWidthMin?: number
+      cardCustomWidthMax?: number
+      cardCustomHeightMin?: number
+      cardCustomHeightMax?: number
     }
-    if (merged.cardSize && legacyMap[merged.cardSize as string]) {
-      merged.cardSize = legacyMap[merged.cardSize as string]
+    // ─── cardSize 迁移：两波历史 ──────────────────────────
+    // 第一波 v0.21.19：sm/md/lg → standard/large
+    //   sm(老h-24=小) → standard、md(老h-32=中) → large、lg(老h-36=大，已废弃) → large
+    // 第二波 v0.22.x（本次）：large → custom，并落一组与原 large(h-32, p-3.5) 视觉等价的 W/H，
+    //   让老用户切到「自定义」档时看到与之前接近的尺寸。
+    const legacyV1: Record<string, string> = { sm: 'standard', md: 'large', lg: 'large' }
+    // 用 unknown 中转，避开 cardSize 联合（'compact'|'standard'|'custom'）跟 'large'
+    // 等历史字面量的类型不兼容；这里就是迁移层，本来就在处理"不在联合里的旧值"。
+    const rawSize = merged.cardSize as unknown as string | undefined
+    if (rawSize && legacyV1[rawSize]) {
+      ;(merged as { cardSize?: string }).cardSize = legacyV1[rawSize]
     }
-    return merged
+    if ((merged as { cardSize?: string }).cardSize === 'large') {
+      ;(merged as { cardSize?: string }).cardSize = 'custom'
+      // 仅当老用户没有手填过 customXxx 时才注入默认；否则尊重已存在的值（避免覆盖手动配置）
+      merged.cardCustomWidthMin ??= 192
+      merged.cardCustomWidthMax ??= 192
+      merged.cardCustomHeightMin ??= 128
+      merged.cardCustomHeightMax ??= 128
+    }
+    return merged as UserSettings
   }
 
   async saveSettings(settings: UserSettings): Promise<void> {

@@ -25,6 +25,8 @@ import { VirtualBookmarkGrid } from './VirtualBookmarkGrid'
 import { RecentSection } from './RecentSection'
 import { promptDialog } from './Dialog'
 import { cn } from '../utils/cn'
+import { clampCardHeight, getGridClassAndStyle } from '../utils/cardGrid'
+import { CUSTOM_H_MIN_DEFAULT } from '../types/bookmark'
 import { IconView } from '../utils/icon'
 
 /**
@@ -33,17 +35,6 @@ import { IconView } from '../utils/icon'
  * 入口判定走纯字符串前缀，命中后才动态拉 chunk。
  */
 const AISearchView = lazy(() => import('./BookmarkGridAISearch'))
-
-const GRID_COLS =
-  'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3'
-
-/**
- * compact 档专用网格：固定列宽 = 卡片宽（112px），auto-fill 自动按容器宽度铺。
- * 避免标准断点 grid 在大屏下把 w-28 卡撑到一行 5~6 列后留出过宽的视觉空隙。
- * gap 也收紧到 2，与 compact 紧凑信息密度一致。
- */
-const GRID_COLS_COMPACT =
-  'grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-2'
 
 export function BookmarkGrid() {
   const allCards = useBookmarkStore((s) => s.cards)
@@ -321,6 +312,15 @@ function CategorySection({
   // v0.21.2：子 section header 上编辑 description
   const updateCategory = useBookmarkStore((s) => s.updateCategory)
   const cardSize = useBookmarkStore((s) => s.settings.cardSize)
+  // v0.22.x：标准档卡片宽度自定义；这几个字段连同 cardSize 一起喂给 getGridClassAndStyle
+  const cardWidthMode = useBookmarkStore((s) => s.settings.cardWidthMode)
+  const cardWidthMin = useBookmarkStore((s) => s.settings.cardWidthMin)
+  const cardWidthMax = useBookmarkStore((s) => s.settings.cardWidthMax)
+  const cardWidthFixed = useBookmarkStore((s) => s.settings.cardWidthFixed)
+  // v0.22.x：custom 档卡片宽高 min/max
+  const cardCustomWidthMin = useBookmarkStore((s) => s.settings.cardCustomWidthMin)
+  const cardCustomWidthMax = useBookmarkStore((s) => s.settings.cardCustomWidthMax)
+  const cardCustomHeightMin = useBookmarkStore((s) => s.settings.cardCustomHeightMin)
   // v0.21.2 / v0.21.8：当书签拖到本 section（header 或下方书签网格区域，
   // 整个 section 都是 drop target）时，让 header 显示高亮提示落点
   const isSectionDropHovered = useDropHintStore(
@@ -519,12 +519,20 @@ function CategorySection({
   // section 整体为空时（无子文件夹、无书签）也显示出来——保持目录结构可见
   const sectionIsEmpty = subFolders.length === 0 && directCards.length === 0
   // + 占位用正方形：宽=高，避免在网格列里被拉成长方形
+  // v0.22.x：custom 档下不再写死正方形（用户自定义 W/H 时这种"固定 w-N h-N"
+  //   会跟真实卡尺寸脱节），改成由 grid cell 决定宽度 + customHeightMin 兜底高度。
   const addCardSquareClass =
     cardSize === 'compact'
       ? 'w-28 h-28'
-      : cardSize === 'large'
-        ? 'w-32 h-32'
+      : cardSize === 'custom'
+        ? '' // 走下方 addCardInlineStyle 提供的 inline 高度，宽度跟 grid cell
         : 'w-24 h-24'
+  const addCardInlineStyle =
+    cardSize === 'custom'
+      ? {
+          minHeight: clampCardHeight(cardCustomHeightMin, CUSTOM_H_MIN_DEFAULT),
+        }
+      : undefined
 
   return (
     <section
@@ -722,7 +730,18 @@ function CategorySection({
                   items={directCards.map((c) => c.id)}
                   strategy={rectSortingStrategy}
                 >
-                  <div className={cardSize === 'compact' ? GRID_COLS_COMPACT : GRID_COLS}>
+                  {(() => {
+                    const grid = getGridClassAndStyle({
+                      cardSize,
+                      cardWidthMode,
+                      cardWidthMin,
+                      cardWidthMax,
+                      cardWidthFixed,
+                      cardCustomWidthMin,
+                      cardCustomWidthMax,
+                    })
+                    return (
+                  <div className={grid.className} style={grid.style}>
                     {directCards.map((card) => (
                       <BookmarkCardItem key={card.id} card={card} />
                     ))}
@@ -731,6 +750,7 @@ function CategorySection({
                     {(
                       <button
                         onClick={handleAddCard}
+                        style={addCardInlineStyle}
                         className={cn(
                           'group/add justify-self-start rounded-xl text-3xl flex items-center justify-center shrink-0',
                           'border border-dashed border-slate-300/60 dark:border-slate-600/50',
@@ -751,6 +771,8 @@ function CategorySection({
                       </button>
                     )}
                   </div>
+                    )
+                  })()}
                 </SortableContext>
                 {/* v0.21.4 DragOverlay：把拖拽中的卡片视觉 portal 到 <body>，
                     逃出 main 容器 overflow 的裁剪。

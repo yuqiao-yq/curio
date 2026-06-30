@@ -89,9 +89,11 @@ describe('LocalRepository: 基础读写', () => {
     expect(got2.layout).toBe(DEFAULT_SETTINGS.layout)
   })
 
-  it("getSettings 把老 cardSize 'sm'/'md'/'lg' 迁移到新枚举", async () => {
+  it("getSettings 把老 cardSize 'sm'/'md'/'lg' / 'large' 迁移到新枚举", async () => {
     const repo = new LocalRepository()
-    // 直接绕过 saveSettings 写入"老格式"值
+    // 第一波（v0.21.19）：sm/md/lg → standard/large；
+    // 紧接着第二波（v0.22.x）：large → custom + 192×128 默认。
+    // 所以 sm 走完两层后仍是 standard；md/lg/large 都落到 custom。
     await chrome.storage.local.set({
       'curio:settings': { ...DEFAULT_SETTINGS, cardSize: 'sm' },
     })
@@ -102,13 +104,42 @@ describe('LocalRepository: 基础读写', () => {
       'curio:settings': { ...DEFAULT_SETTINGS, cardSize: 'md' },
     })
     const s2 = await repo.getSettings()
-    expect(s2.cardSize).toBe('large')
+    expect(s2.cardSize).toBe('custom')
+    expect(s2.cardCustomWidthMin).toBe(192)
+    expect(s2.cardCustomHeightMin).toBe(128)
 
     await chrome.storage.local.set({
       'curio:settings': { ...DEFAULT_SETTINGS, cardSize: 'lg' },
     })
     const s3 = await repo.getSettings()
-    expect(s3.cardSize).toBe('large')
+    expect(s3.cardSize).toBe('custom')
+
+    // 直接给老 'large'（v0.22.x 之前的运行时值）也应该映射到 custom
+    await chrome.storage.local.set({
+      'curio:settings': { ...DEFAULT_SETTINGS, cardSize: 'large' },
+    })
+    const s4 = await repo.getSettings()
+    expect(s4.cardSize).toBe('custom')
+    expect(s4.cardCustomWidthMin).toBe(192)
+    expect(s4.cardCustomWidthMax).toBe(192)
+    expect(s4.cardCustomHeightMin).toBe(128)
+    expect(s4.cardCustomHeightMax).toBe(128)
+
+    // 老用户已经手动改过 customXxx → 不被默认覆盖
+    await chrome.storage.local.set({
+      'curio:settings': {
+        ...DEFAULT_SETTINGS,
+        cardSize: 'large',
+        cardCustomWidthMin: 300,
+        cardCustomWidthMax: 300,
+      },
+    })
+    const s5 = await repo.getSettings()
+    expect(s5.cardSize).toBe('custom')
+    expect(s5.cardCustomWidthMin).toBe(300)
+    expect(s5.cardCustomWidthMax).toBe(300)
+    // 没填的字段仍走默认
+    expect(s5.cardCustomHeightMin).toBe(128)
   })
 })
 

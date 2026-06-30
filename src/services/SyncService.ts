@@ -66,6 +66,14 @@ export const SYNCABLE_SETTINGS_KEYS = [
   'cardSize',
   'cardIconSize',
   'cardGlass',
+  'cardWidthMode',
+  'cardWidthMin',
+  'cardWidthMax',
+  'cardWidthFixed',
+  'cardCustomWidthMin',
+  'cardCustomWidthMax',
+  'cardCustomHeightMin',
+  'cardCustomHeightMax',
   'fontColor',
   'backgroundBlur',
   'subSectionDefaultExpanded',
@@ -220,6 +228,16 @@ function sanitizeSettings(
         out[k] = v
       }
     }
+  }
+  // v0.22.x large → custom 迁移兜底：远端可能仍然是「旧版客户端」推上来的 cardSize: 'large'，
+  // 接到本地之前先映射成 custom，并落与 LocalRepository.getSettings 一致的视觉默认 W/H，
+  // 避免被 'large' 字面量短路到 type union 之外引发渲染兜底（CARD_SIZE_STYLES.standard）。
+  if ((out as { cardSize?: string }).cardSize === 'large') {
+    ;(out as { cardSize?: string }).cardSize = 'custom'
+    if (out.cardCustomWidthMin == null) out.cardCustomWidthMin = 192
+    if (out.cardCustomWidthMax == null) out.cardCustomWidthMax = 192
+    if (out.cardCustomHeightMin == null) out.cardCustomHeightMin = 128
+    if (out.cardCustomHeightMax == null) out.cardCustomHeightMax = 128
   }
   return out
 }
