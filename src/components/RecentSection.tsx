@@ -6,15 +6,9 @@ import { BookmarkCardItem } from './BookmarkCardItem'
 import { HistoryCardItem } from './HistoryCardItem'
 import { confirmDialog, promptDialog } from './Dialog'
 import { cn } from '../utils/cn'
+import { getGridClassAndStyle } from '../utils/cardGrid'
 import { IconView } from '../utils/icon'
 import { MenuIcons } from './CardMenu'
-
-const GRID_COLS =
-  'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3'
-
-/** compact 档同款收紧网格：固定列宽 112px + gap-2；与 BookmarkGrid 内 GRID_COLS_COMPACT 同步 */
-const GRID_COLS_COMPACT =
-  'grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-2'
 
 /**
  * 最近使用 模块：常驻在主页面顶部（搜索模式与无激活分类时不渲染）
@@ -30,6 +24,15 @@ const GRID_COLS_COMPACT =
  */
 export function RecentSection() {
   const cardSize = useBookmarkStore((s) => s.settings.cardSize)
+  // 与 BookmarkGrid 一致：把 cardWidthMode / cardWidthMin/Max/Fixed 以及
+  // custom 档的宽度 min/max 一并喂给 getGridClassAndStyle，否则最近使用区
+  // 永远是默认响应式网格，custom 档不生效。
+  const cardWidthMode = useBookmarkStore((s) => s.settings.cardWidthMode)
+  const cardWidthMin = useBookmarkStore((s) => s.settings.cardWidthMin)
+  const cardWidthMax = useBookmarkStore((s) => s.settings.cardWidthMax)
+  const cardWidthFixed = useBookmarkStore((s) => s.settings.cardWidthFixed)
+  const cardCustomWidthMin = useBookmarkStore((s) => s.settings.cardCustomWidthMin)
+  const cardCustomWidthMax = useBookmarkStore((s) => s.settings.cardCustomWidthMax)
   const recentEntries = useBookmarkStore((s) => s.recentEntries)
   const recentLimit = useBookmarkStore((s) => s.recentLimit)
   const setRecentLimit = useBookmarkStore((s) => s.setRecentLimit)
@@ -232,7 +235,18 @@ export function RecentSection() {
       {!collapsed && (
         <>
           {visibleItems.length > 0 ? (
-            <div className={cardSize === 'compact' ? GRID_COLS_COMPACT : GRID_COLS}>
+            (() => {
+              const grid = getGridClassAndStyle({
+                cardSize,
+                cardWidthMode,
+                cardWidthMin,
+                cardWidthMax,
+                cardWidthFixed,
+                cardCustomWidthMin,
+                cardCustomWidthMax,
+              })
+              return (
+            <div className={grid.className} style={grid.style}>
               {visibleItems.map((it) =>
                 it.kind === 'bookmark' ? (
                   <BookmarkCardItem
@@ -248,6 +262,8 @@ export function RecentSection() {
                 ),
               )}
             </div>
+              )
+            })()
           ) : (
             <div className="text-xs text-slate-400 pl-7 py-1">
               {includeHistory

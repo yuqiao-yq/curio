@@ -2,6 +2,8 @@ import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { BookmarkCard, UserSettings } from '../types/bookmark'
+import { CUSTOM_H_MAX_DEFAULT, CUSTOM_H_MIN_DEFAULT } from '../types/bookmark'
+import { clampCardHeight } from '../utils/cardGrid'
 import { getHostname } from '../utils/favicon'
 import { useBookmarkStore } from '../stores/useBookmarkStore'
 import { usePageIndex } from '../ai/services/usePageIndex'
@@ -39,10 +41,12 @@ export interface SearchMeta {
 }
 
 /**
- * 三档样式（v0.21.19 起）：
+ * 三档样式（v0.22.x 起；标签自 v0.21.19 起重排）：
  * - compact 精简：走单独的 CompactBookmarkCard 渲染分支，不复用本表
  * - standard 标准：默认尺寸，含域名 / 备注 / tags
- * - large 大：信息更舒展
+ * - custom 自定义：宽/高 min~max 由 settings 控制；这里只给出 padding / icon /
+ *   text 等基线类，高度 / 列宽全部走 inline style + utils/cardGrid 网格。
+ *   老 'large' 在 LocalRepository.getSettings 中已迁移成 custom + 192×128。
  *
  * 注：compact 也放进 Record 是为了类型完整性；CompactBookmarkCard 不读它。
  */
@@ -73,7 +77,7 @@ const CARD_SIZE_STYLES: Record<
     note: 'text-[11px] leading-snug truncate rounded px-1.5 py-1 -mx-1.5',
     addNote: 'text-[11px] rounded px-1.5 py-1 -mx-1.5',
   },
-  // standard = 原「小」(h-24) — 老 'sm' 用户迁移落到这里
+  // standard = 原「小」(h-24)
   standard: {
     card: 'p-3 h-24 gap-2',
     editingCard: 'p-3 min-h-24 gap-2',
@@ -84,17 +88,16 @@ const CARD_SIZE_STYLES: Record<
     note: 'text-[11px] leading-snug truncate rounded px-1.5 py-1 -mx-1.5',
     addNote: 'text-[11px] rounded px-1.5 py-1 -mx-1.5',
   },
-  // large = 原「中」(h-32) — 老 'md' / 'lg' 用户迁移落到这里
-  large: {
-    card: 'p-3.5 h-32 gap-2.5',
-    editingCard: 'p-3.5 min-h-32 gap-2.5',
+  // custom = 原「large」(h-32) 的视觉基线；高度走 inline minHeight/maxHeight，
+  // 这里 card 类不要 h-* 也不要 min-h-*，否则会与 inline 冲突
+  custom: {
+    card: 'p-3.5 gap-2.5',
+    editingCard: 'p-3.5 gap-2.5',
     icon: 'w-9 h-9 rounded-lg',
     title: 'text-sm font-semibold leading-snug line-clamp-2 text-slate-800 dark:text-slate-100',
     host: 'text-[11px]',
-    // large 允许 2 行，必须保留 line-clamp-2。同时显式约束 max-h 为 2 行的
-    // 内容高度 + 上下 padding（leading-snug=1.375 × text-xs=12px = 16.5px/行
-    // 2 行 = 33px + py-1.5 = 12px → max-h ≈ 45px），二次保险防止"半行字"
-    // 漏到 padding 区。
+    // custom 允许 2 行，沿用 large 时的 line-clamp-2 + 显式 max-h 二次保险，
+    // 防止"半行字"漏到 padding 区。
     note: 'text-xs leading-snug line-clamp-2 max-h-[45px] overflow-hidden rounded-md px-2 py-1.5 -mx-2',
     addNote: 'text-xs rounded-md px-2 py-1.5 -mx-2',
   },
@@ -128,6 +131,10 @@ function BookmarkCardItemImpl({
   const setSearchKeyword = useBookmarkStore((s) => s.setSearchKeyword)
   const cardSize = useBookmarkStore((s) => s.settings.cardSize)
   const cardIconSize = useBookmarkStore((s) => s.settings.cardIconSize)
+  // custom 档：直接订阅高度 min/max 字段，喂给下面 style 合并；
+  // 非 custom 档值不变（settings 里就是 undefined），不触发 re-render。
+  const cardCustomHeightMin = useBookmarkStore((s) => s.settings.cardCustomHeightMin)
+  const cardCustomHeightMax = useBookmarkStore((s) => s.settings.cardCustomHeightMax)
   const size = CARD_SIZE_STYLES[cardSize ?? 'standard'] ?? CARD_SIZE_STYLES.standard
   // v0.21.19：cardIconSize='small' 时把图标容器（含底图层）缩到 favicon 视觉权重
   const iconContainerCls = cardIconSize === 'small' ? 'w-6 h-6 rounded' : size.icon
@@ -221,6 +228,15 @@ function BookmarkCardItemImpl({
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0 : 1,
+    // custom 档下用 inline minHeight/maxHeight 让卡片在 [min, max] 之间自适应；
+    // overflow: hidden 防止 note/tags 多行时超出 max。其它档保持原有 h-* 类即可。
+    ...(cardSize === 'custom'
+      ? {
+          minHeight: clampCardHeight(cardCustomHeightMin, CUSTOM_H_MIN_DEFAULT),
+          maxHeight: clampCardHeight(cardCustomHeightMax, CUSTOM_H_MAX_DEFAULT),
+          overflow: 'hidden',
+        }
+      : null),
   }
 
   const openUrl = () => {
@@ -938,9 +954,19 @@ export function CardIconView({
 function CardDragPreviewImpl({ card }: { card: BookmarkCard }) {
   const cardSize = useBookmarkStore((s) => s.settings.cardSize)
   const cardIconSize = useBookmarkStore((s) => s.settings.cardIconSize)
+  const cardCustomHeightMin = useBookmarkStore((s) => s.settings.cardCustomHeightMin)
+  const cardCustomHeightMax = useBookmarkStore((s) => s.settings.cardCustomHeightMax)
   const size = CARD_SIZE_STYLES[cardSize ?? 'standard'] ?? CARD_SIZE_STYLES.standard
   const iconContainerCls = cardIconSize === 'small' ? 'w-6 h-6 rounded' : size.icon
   const iconVariant: 'small' | 'standard' = cardIconSize === 'small' ? 'small' : 'standard'
+  // custom 档下让 drag preview 和真实卡尺寸一致（否则浮层比落点小一截）
+  const customHeight =
+    cardSize === 'custom'
+      ? {
+          minHeight: clampCardHeight(cardCustomHeightMin, CUSTOM_H_MIN_DEFAULT),
+          maxHeight: clampCardHeight(cardCustomHeightMax, CUSTOM_H_MAX_DEFAULT),
+        }
+      : null
 
   return (
     <div
@@ -955,6 +981,7 @@ function CardDragPreviewImpl({ card }: { card: BookmarkCard }) {
           '0 18px 40px -8px rgba(99, 102, 241, 0.5), 0 6px 16px -4px rgba(0, 0, 0, 0.25)',
         transform: 'scale(1.04)',
         transformOrigin: 'center',
+        ...(customHeight ?? {}),
       }}
     >
       <div className="flex items-start gap-2">

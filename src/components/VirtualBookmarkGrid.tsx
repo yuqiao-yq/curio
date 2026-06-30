@@ -3,6 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import type { BookmarkCard } from '../types/bookmark'
 import { BookmarkCardItem } from './BookmarkCardItem'
 import { useBookmarkStore } from '../stores/useBookmarkStore'
+import { getGridClassAndStyle, getVirtualRowLayout } from '../utils/cardGrid'
 
 /* ─────────────────────────────────────────────────────────────
  * VirtualBookmarkGrid（P0-1）
@@ -12,14 +13,15 @@ import { useBookmarkStore } from '../stores/useBookmarkStore'
  *   - 分类内部按 section 展示，单 section 通常 <100 卡，不走这里
  *
  * 实现：
- *   - 行级虚拟化（每行 N 列，N 由容器宽度 + Tailwind 断点推导）
+ *   - 行级虚拟化（每行 N 列，N 由容器宽度 + 当前 cardSize / cardWidthMode 推导）
  *   - 滚动容器自动向上找最近的 overflow-y-auto/scroll 祖先（这里是
  *     <main className="overflow-y-auto"> in App.tsx）
  *   - 卡片高度用 measureElement 动态测量，不写死，避免不同视觉密度下高度漂移
  *   - overscan=4 行：滚动时预渲染上下 4 行，体感无白屏
- *   - 列数变化（窗口 resize 跨越断点）时强制 reset 测量缓存
+ *   - 列数变化（窗口 resize 跨越断点 / 切换宽度模式）时强制 reset 测量缓存
  *
- * 与原始 `<div className={GRID_COLS}>` 行为完全一致：响应式列数、gap-3。
+ * 与原始 `<div className={GRID_COLS}>` 行为完全一致；标准档新增 fluid / fixed
+ * 模式后，列数与 gridTemplateColumns 全部委托给 utils/cardGrid。
  * ───────────────────────────────────────────────────────────── */
 
 export interface VirtualBookmarkItem {
@@ -35,26 +37,6 @@ interface Props {
   threshold?: number
 }
 
-// 与 BookmarkGrid 内 GRID_COLS 同步：grid-cols-2 sm:3 md:4 lg:5 xl:6
-// Tailwind 默认断点：sm=640 md=768 lg=1024 xl=1280
-function colsForWidth(w: number): number {
-  if (w >= 1280) return 6
-  if (w >= 1024) return 5
-  if (w >= 768) return 4
-  if (w >= 640) return 3
-  return 2
-}
-
-/**
- * compact 档：按 BookmarkGrid GRID_COLS_COMPACT 同款 `auto-fill minmax(112px,1fr)` 计算列数。
- * 单卡宽 112px，gap-2 = 8px；列数 = floor((w + gap) / (112 + gap))，最少 1 列。
- */
-const COMPACT_CARD = 112
-const COMPACT_GAP = 8
-function compactColsForWidth(w: number): number {
-  return Math.max(1, Math.floor((w + COMPACT_GAP) / (COMPACT_CARD + COMPACT_GAP)))
-}
-
 /** 向上找最近的可滚动祖先；找不到回退到 documentElement */
 function findScrollParent(el: HTMLElement | null): HTMLElement {
   let cur: HTMLElement | null = el?.parentElement ?? null
@@ -68,35 +50,46 @@ function findScrollParent(el: HTMLElement | null): HTMLElement {
 }
 
 export function VirtualBookmarkGrid({ items, threshold = 60 }: Props) {
+  // 仅订阅参与布局的 5 个字段，避免无关 settings 改动触发 re-render
   const cardSize = useBookmarkStore((s) => s.settings.cardSize)
-  const isCompact = cardSize === 'compact'
+  const cardWidthMode = useBookmarkStore((s) => s.settings.cardWidthMode)
+  const cardWidthMin = useBookmarkStore((s) => s.settings.cardWidthMin)
+  const cardWidthMax = useBookmarkStore((s) => s.settings.cardWidthMax)
+  const cardWidthFixed = useBookmarkStore((s) => s.settings.cardWidthFixed)
+  const gridSettings = useMemo(
+    () => ({ cardSize, cardWidthMode, cardWidthMin, cardWidthMax, cardWidthFixed }),
+    [cardSize, cardWidthMode, cardWidthMin, cardWidthMax, cardWidthFixed],
+  )
+
   const parentRef = useRef<HTMLDivElement | null>(null)
   const [scrollEl, setScrollEl] = useState<HTMLElement | null>(null)
-  const [cols, setCols] = useState<number>(() => {
-    if (typeof window === 'undefined') return 5
-    return isCompact
-      ? compactColsForWidth(window.innerWidth)
-      : colsForWidth(window.innerWidth)
-  })
+
+  // 容器宽 → 用 utils/cardGrid 推 cols / gap / template
+  const [layout, setLayout] = useState(() =>
+    getVirtualRowLayout(
+      gridSettings,
+      typeof window === 'undefined' ? 1280 : window.innerWidth,
+    ),
+  )
 
   // 找滚动父节点（mount 后 DOM 才有）
   useLayoutEffect(() => {
     setScrollEl(findScrollParent(parentRef.current))
   }, [])
 
-  // 监听容器宽度变化推导列数；isCompact 切换时立即用最新策略复算一次
+  // 监听容器宽度变化推导列数；gridSettings 变化时立即用最新策略复算一次
   useEffect(() => {
     const el = parentRef.current
     if (!el) return
-    const recalc = (w: number) =>
-      setCols(isCompact ? compactColsForWidth(w) : colsForWidth(w))
+    const recalc = (w: number) => setLayout(getVirtualRowLayout(gridSettings, w))
     recalc(el.getBoundingClientRect().width)
     const ro = new ResizeObserver(([entry]) => recalc(entry.contentRect.width))
     ro.observe(el)
     return () => ro.disconnect()
-  }, [isCompact])
+  }, [gridSettings])
 
   const enabled = items.length >= threshold
+  const cols = layout.cols
 
   const rows = useMemo(() => {
     if (!enabled) return []
@@ -107,34 +100,24 @@ export function VirtualBookmarkGrid({ items, threshold = 60 }: Props) {
     return out
   }, [items, cols, enabled])
 
-  // 行间距与 BookmarkGrid 一致：compact gap-2 / 其它 gap-3
-  // 行高估算给个保守初值，measureElement 之后会自动校正
-  const ROW_GAP = isCompact ? 8 : 12
-  const ESTIMATED_ROW_HEIGHT = isCompact ? 112 : 140
-
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollEl,
-    estimateSize: () => ESTIMATED_ROW_HEIGHT + ROW_GAP,
+    estimateSize: () => layout.estimatedRowHeight + layout.rowGap,
     overscan: 4,
-    measureElement: (el) => el.getBoundingClientRect().height + ROW_GAP,
+    measureElement: (el) => el.getBoundingClientRect().height + layout.rowGap,
   })
 
-  // 列数变化时缓存失效（行宽度变了，单卡可能高度也变）
+  // 列数 / 行 gap 变化时缓存失效（行宽度变了，单卡可能高度也变）
   useEffect(() => {
     virtualizer.measure()
-  }, [cols, virtualizer])
+  }, [cols, layout.rowGap, virtualizer])
 
   // 小集合直接平铺，省去 windowing 复杂度
   if (!enabled) {
+    const grid = getGridClassAndStyle(gridSettings)
     return (
-      <div
-        className={
-          isCompact
-            ? 'grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-2'
-            : 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3'
-        }
-      >
+      <div className={grid.className} style={grid.style}>
         {items.map(({ card, categoryPath, dupCount, dupCategoryPaths }) => (
           <BookmarkCardItem
             key={card.id}
@@ -163,8 +146,11 @@ export function VirtualBookmarkGrid({ items, threshold = 60 }: Props) {
             style={{ transform: `translateY(${vr.start}px)` }}
           >
             <div
-              className={isCompact ? 'grid gap-2' : 'grid gap-3'}
-              style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+              className="grid"
+              style={{
+                gap: `${layout.rowGap}px`,
+                gridTemplateColumns: layout.gridTemplateColumns,
+              }}
             >
               {row.map(({ card, categoryPath, dupCount, dupCategoryPaths }) => (
                 <BookmarkCardItem

@@ -3,6 +3,8 @@ import type { BrowserHistoryItem } from '../stores/useBookmarkStore'
 import { toast } from '../stores/useToastStore'
 import { getHostname } from '../utils/favicon'
 import { cn } from '../utils/cn'
+import { CUSTOM_H_MAX_DEFAULT, CUSTOM_H_MIN_DEFAULT } from '../types/bookmark'
+import { clampCardHeight } from '../utils/cardGrid'
 import { CardMenu, MenuIcons, type CardMenuItem } from './CardMenu'
 import { FaviconImg } from './FaviconImg'
 import { confirmDialog } from './Dialog'
@@ -30,12 +32,17 @@ export function HistoryCardItem({ item }: Props) {
   const deleteHistoryUrl = useBookmarkStore((s) => s.deleteHistoryUrl)
   const cardSize = useBookmarkStore((s) => s.settings.cardSize)
   const cardIconSize = useBookmarkStore((s) => s.settings.cardIconSize)
+  // v0.22.x：custom 档下让历史卡片同步走 inline minHeight/maxHeight，
+  // 否则会跟同屏的 BookmarkCardItem 高度不一致（用户看上去"自定义没生效"）。
+  const cardCustomHeightMin = useBookmarkStore((s) => s.settings.cardCustomHeightMin)
+  const cardCustomHeightMax = useBookmarkStore((s) => s.settings.cardCustomHeightMax)
   // v0.21.19：compact 走单独的方形分支（与 CompactBookmarkCard 对齐尺寸）
-  // large = 原「中」(h-32)，standard = 原「小」(h-24)
+  // v0.22.x：原 'large' 已迁移成 'custom'。custom 档下 card 类不带 h-*，
+  //   高度交给 inline；其它档继续走原 h-24 / h-32。
   const size =
-    cardSize === 'large'
+    cardSize === 'custom'
       ? {
-          card: 'p-3.5 h-32 gap-2.5',
+          card: 'p-3.5 gap-2.5',
           icon: 'w-9 h-9 rounded-lg',
           title: 'text-sm font-semibold leading-snug line-clamp-2',
           host: 'text-[11px]',
@@ -46,6 +53,14 @@ export function HistoryCardItem({ item }: Props) {
           title: 'text-sm font-medium truncate',
           host: 'text-[11px]',
         }
+  const customStyle =
+    cardSize === 'custom'
+      ? {
+          minHeight: clampCardHeight(cardCustomHeightMin, CUSTOM_H_MIN_DEFAULT),
+          maxHeight: clampCardHeight(cardCustomHeightMax, CUSTOM_H_MAX_DEFAULT),
+          overflow: 'hidden' as const,
+        }
+      : undefined
 
   const openUrl = () => {
     window.open(item.url, '_blank', 'noopener,noreferrer')
@@ -161,6 +176,7 @@ export function HistoryCardItem({ item }: Props) {
   return (
     <div
       onClick={openUrl}
+      style={customStyle}
       className={cn(
         'card group select-none cursor-pointer overflow-hidden flex flex-col',
         size.card,

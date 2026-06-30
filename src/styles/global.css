@@ -127,6 +127,86 @@
     @apply btn text-slate-600 hover:bg-slate-100;
     @apply dark:text-slate-300 dark:hover:bg-slate-800;
   }
+
+  /*
+   * 「标准档」卡片宽度自定义网格（v0.22.x）。
+   * 由 settings.cardWidthMode 切换：
+   *
+   *  .curio-grid-fluid  — 保留 2/3/4/5/6 列响应式断点，但每列宽度被
+   *                       约束在 [--curio-card-min-w, --curio-card-max-w] 之间。
+   *                       屏宽变化时列数不变、列宽伸缩。
+   *  .curio-grid-fixed  — `repeat(auto-fill, var(--curio-card-fixed-w))`，
+   *                       固定单卡宽度，列数随容器宽度自动变化（瀑布流式）。
+   *
+   * CSS 变量由 BookmarkGrid / VirtualBookmarkGrid 通过 inline style 注入；
+   * Tailwind 没法对动态像素值生成 arbitrary class，所以走 CSS 变量更稳。
+   *
+   * 断点与 Tailwind 默认 sm/md/lg/xl 保持一致（与原 GRID_COLS 对齐）。
+   */
+  .curio-grid-fluid {
+    display: grid;
+    gap: 0.75rem; /* gap-3 */
+    grid-template-columns: repeat(
+      2,
+      minmax(var(--curio-card-min-w, 140px), var(--curio-card-max-w, 240px))
+    );
+  }
+  @media (min-width: 640px) {
+    .curio-grid-fluid {
+      grid-template-columns: repeat(
+        3,
+        minmax(var(--curio-card-min-w, 140px), var(--curio-card-max-w, 240px))
+      );
+    }
+  }
+  @media (min-width: 768px) {
+    .curio-grid-fluid {
+      grid-template-columns: repeat(
+        4,
+        minmax(var(--curio-card-min-w, 140px), var(--curio-card-max-w, 240px))
+      );
+    }
+  }
+  @media (min-width: 1024px) {
+    .curio-grid-fluid {
+      grid-template-columns: repeat(
+        5,
+        minmax(var(--curio-card-min-w, 140px), var(--curio-card-max-w, 240px))
+      );
+    }
+  }
+  @media (min-width: 1280px) {
+    .curio-grid-fluid {
+      grid-template-columns: repeat(
+        6,
+        minmax(var(--curio-card-min-w, 140px), var(--curio-card-max-w, 240px))
+      );
+    }
+  }
+
+  .curio-grid-fixed {
+    display: grid;
+    gap: 0.75rem; /* gap-3 */
+    grid-template-columns: repeat(
+      auto-fill,
+      var(--curio-card-fixed-w, 180px)
+    );
+  }
+
+  /*
+   * 「自定义档」(cardSize === 'custom') 网格：
+   * auto-fill + minmax(min, max) — min === max 时退化为固定列宽，
+   * min < max 时列数固定（= ⌊容器/min⌋），每列宽度在 [min, max] 间放大。
+   * 与 .curio-grid-fixed 区别：fixed 永远等宽，custom 用 max 吸收冗余空间。
+   */
+  .curio-grid-custom {
+    display: grid;
+    gap: 0.75rem; /* gap-3 */
+    grid-template-columns: repeat(
+      auto-fill,
+      minmax(var(--curio-card-min-w, 160px), var(--curio-card-max-w, 240px))
+    );
+  }
 }
 
 /* 全局滚动条：细 + 半透明 + hover 才加深，融入毛玻璃背景 */

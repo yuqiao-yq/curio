@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { Category } from '../types/bookmark'
+import { CUSTOM_H_MAX_DEFAULT, CUSTOM_H_MIN_DEFAULT } from '../types/bookmark'
 import { useBookmarkStore } from '../stores/useBookmarkStore'
 import { useDropHintStore } from '../stores/useDropHintStore'
 import { cn } from '../utils/cn'
+import { clampCardHeight } from '../utils/cardGrid'
 import { IconPicker } from './IconPicker'
 import { IconView } from '../utils/icon'
 import { CardMenu, MenuIcons } from './CardMenu'
@@ -45,6 +47,10 @@ export function FolderCard({ category, draggable = false }: Props) {
   const removeCategory = useBookmarkStore((s) => s.removeCategory)
   const updateCategory = useBookmarkStore((s) => s.updateCategory)
   const cardSize = useBookmarkStore((s) => s.settings.cardSize)
+  // v0.22.x：custom 档下同步走 inline minHeight/maxHeight，与 BookmarkCardItem /
+  // HistoryCardItem 高度一致；否则混排时文件夹卡片显得"特别高"。
+  const cardCustomHeightMin = useBookmarkStore((s) => s.settings.cardCustomHeightMin)
+  const cardCustomHeightMax = useBookmarkStore((s) => s.settings.cardCustomHeightMax)
   // 跨文件夹拖拽（v0.21.0+）：当某书签卡片 / 文件夹卡片悬停在本卡上时，订阅 hint 高亮
   const isDropHovered = useDropHintStore(
     (s) => s.hoverCategoryId === category.id,
@@ -146,16 +152,25 @@ export function FolderCard({ category, draggable = false }: Props) {
       ? '0 18px 40px -8px rgba(99, 102, 241, 0.45), 0 6px 16px -4px rgba(0, 0, 0, 0.25)'
       : undefined,
     willChange: isDragging ? 'transform' : undefined,
+    // custom 档：内联 minHeight/maxHeight，跟 BookmarkCardItem 同款
+    ...(cardSize === 'custom'
+      ? {
+          minHeight: clampCardHeight(cardCustomHeightMin, CUSTOM_H_MIN_DEFAULT),
+          maxHeight: clampCardHeight(cardCustomHeightMax, CUSTOM_H_MAX_DEFAULT),
+          overflow: 'hidden' as const,
+        }
+      : null),
   }
   // 拖动自己时本卡不应该高亮自己（hint 检测里已防护，这里再做一道兜底）
   const showDropHint = isDropHovered && !isDragging
   // FolderCard 不参与 compact 模式（文件夹本身需要展示子项数量），compact 落到「小」尺寸
-  // large = 原「中」(h-32)，standard/compact = 原「小」(h-24)
+  // v0.22.x：原 'large' 已迁移成 'custom'；custom 档下高度由 inline minHeight/maxHeight
+  //   控制（见上面 style），这里 card 类去掉 h-* / min-h-*，否则会与 inline 冲突。
   const size =
-    cardSize === 'large'
+    cardSize === 'custom'
       ? {
-          card: 'p-3.5 h-32 gap-2.5',
-          editingCard: 'p-3.5 min-h-32 gap-2.5',
+          card: 'p-3.5 gap-2.5',
+          editingCard: 'p-3.5 gap-2.5',
           icon: 'w-9 h-9 rounded-lg',
         }
       : {
