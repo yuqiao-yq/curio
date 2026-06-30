@@ -201,13 +201,19 @@ export const CARD_WIDTH_FIXED_DEFAULT = 180
 /**
  * 「自定义档」高度边界与默认值。
  * 宽度边界复用 CARD_WIDTH_MIN_PX / CARD_WIDTH_MAX_PX。
+ *
+ * 默认值与「自定义档 → 标准」预设严格一致：
+ *   宽 160~240（默认走 fluid，列数随容器宽变，但每列宽度被夹住）
+ *   高 96~96（固定，与原 standard 档 h-24 视觉等价）
+ * 这意味着用户切到「自定义」档而不调任何输入时，看到的就是"标准款卡片"，
+ * 没有突兀的尺寸跳变。
  */
 export const CARD_HEIGHT_MIN_PX = 64
 export const CARD_HEIGHT_MAX_PX = 400
 export const CUSTOM_W_MIN_DEFAULT = 160
 export const CUSTOM_W_MAX_DEFAULT = 240
 export const CUSTOM_H_MIN_DEFAULT = 96
-export const CUSTOM_H_MAX_DEFAULT = 160
+export const CUSTOM_H_MAX_DEFAULT = 96
 
 /** 导入导出数据 */
 export interface ExportData {
@@ -235,3 +241,156 @@ export const DEFAULT_SETTINGS: UserSettings = {
   language: 'zh-CN',
   syncProvider: 'local',
 }
+
+/* ─────────────────────────────────────────────────────────────
+ * 样式预设（v0.22.x）
+ *
+ * 用户把"主题 + 背景 + 字色 + 卡片布局"四块整体打包成可复用的预设，
+ * 一键切换 / 保存自己的方案 / 导出 JSON 分享。
+ *
+ * 范围：PRESETTABLE_SETTINGS_KEYS 列出的视觉相关字段；
+ * 不含：syncProvider / sidebarWidth / browserSync* / recentIncludeBrowserHistory
+ *      等"设备 / 行为偏好"性质的字段（这类应当跨预设保持稳定）。
+ *
+ * 存储：browser.storage.local 单 key（KEYS.presets），不进云同步白名单
+ *      （wallpaper 含 base64 可能超 sync 100KB 配额；跨设备走 JSON 导出导入）。
+ * ───────────────────────────────────────────────────────────── */
+
+export const PRESETTABLE_SETTINGS_KEYS = [
+  'theme',
+  'wallpaper',
+  'backgroundBlur',
+  'fontColor',
+  'cardSize',
+  'cardIconSize',
+  'cardGlass',
+  'cardWidthMode',
+  'cardWidthMin',
+  'cardWidthMax',
+  'cardWidthFixed',
+  'cardCustomWidthMin',
+  'cardCustomWidthMax',
+  'cardCustomHeightMin',
+  'cardCustomHeightMax',
+  'subSectionDefaultExpanded',
+] as const satisfies ReadonlyArray<keyof UserSettings>
+
+export type PresettableKey = (typeof PRESETTABLE_SETTINGS_KEYS)[number]
+/**
+ * 预设里的 settings 都是「部分覆盖」语义：
+ * - 用户保存预设时只快照非 undefined 字段（pickPresettable 已经做了）
+ * - 应用预设时整段 spread 到当前 settings，未覆盖的字段保持原样
+ * 因此用 Partial<Pick<...>> 而不是 Pick<...>。
+ */
+export type PresettableSettings = Partial<Pick<UserSettings, PresettableKey>>
+
+export interface StylePreset {
+  /** crypto.randomUUID() 生成；builtin 用稳定字符串 'builtin:xxx' */
+  id: string
+  /** 用户可见名（允许重名，不强制唯一） */
+  name: string
+  /** 'builtin' = 仓库内置示例（不可删 / 改名，但可应用、可派生为 user 预设） */
+  kind: 'builtin' | 'user'
+  /** 视觉子集快照；应用时整段 spread 到 updateSettings */
+  settings: PresettableSettings
+  createdAt: number
+  updatedAt: number
+}
+
+/** 导入导出 JSON 格式 */
+export const PRESET_EXPORT_VERSION = 1
+export interface PresetExportData {
+  version: number
+  exportedAt: number
+  /** 仅导出 user 类预设；导入时全部按 'user' 落地，避免污染 builtin id 空间 */
+  presets: StylePreset[]
+}
+
+/**
+ * 内置示例预设。id 用 'builtin:xxx' 稳定字符串，跨版本不重复出现。
+ *
+ * 选 5 个覆盖主流场景：
+ *   default  - 极简白底，新用户默认
+ *   midnight - 深色主题 + 实色卡片，长时间使用更护眼
+ *   aurora   - 亮色 + 渐变 + 强毛玻璃，视觉冲击
+ *   paper    - 紧凑无背景图，纸质书签风
+ *   poster   - 自定义档 + 海报式大卡，类 Pinterest
+ */
+export const BUILTIN_PRESETS: StylePreset[] = [
+  {
+    id: 'builtin:default',
+    name: '默认',
+    kind: 'builtin',
+    settings: {
+      theme: 'auto',
+      cardSize: 'standard',
+      cardIconSize: 'standard',
+    },
+    createdAt: 0,
+    updatedAt: 0,
+  },
+  {
+    id: 'builtin:midnight',
+    name: '午夜',
+    kind: 'builtin',
+    settings: {
+      theme: 'dark',
+      wallpaper: 'linear-gradient(135deg, #1e293b 0%, #312e81 100%)',
+      backgroundBlur: 0,
+      cardSize: 'standard',
+      cardGlass: false,
+      cardIconSize: 'standard',
+    },
+    createdAt: 0,
+    updatedAt: 0,
+  },
+  {
+    id: 'builtin:aurora',
+    name: '极光',
+    kind: 'builtin',
+    settings: {
+      theme: 'light',
+      wallpaper: 'linear-gradient(135deg, #c084fc 0%, #818cf8 50%, #38bdf8 100%)',
+      backgroundBlur: 12,
+      cardSize: 'standard',
+      cardGlass: true,
+      cardIconSize: 'standard',
+    },
+    createdAt: 0,
+    updatedAt: 0,
+  },
+  {
+    id: 'builtin:paper',
+    name: '简纸',
+    kind: 'builtin',
+    settings: {
+      theme: 'light',
+      wallpaper: '',
+      fontColor: '#475569',
+      cardSize: 'compact',
+      cardGlass: false,
+      cardIconSize: 'small',
+    },
+    createdAt: 0,
+    updatedAt: 0,
+  },
+  {
+    id: 'builtin:poster',
+    name: '海报',
+    kind: 'builtin',
+    settings: {
+      theme: 'auto',
+      wallpaper: 'linear-gradient(135deg, #38bdf8 0%, #6366f1 100%)',
+      backgroundBlur: 6,
+      cardSize: 'custom',
+      cardCustomWidthMin: 240,
+      cardCustomWidthMax: 240,
+      cardCustomHeightMin: 280,
+      cardCustomHeightMax: 280,
+      cardGlass: true,
+      cardIconSize: 'standard',
+    },
+    createdAt: 0,
+    updatedAt: 0,
+  },
+]

@@ -350,3 +350,95 @@ describe('LocalRepository: export ↔ import 圆环', () => {
     expect(cards[0].tags).toEqual(['#日常', '🎯 目标', ''])
   })
 })
+
+// ─── 样式预设 ──────────────────────────────────────────
+
+describe('LocalRepository: 样式预设', () => {
+  it('user 为空时 getPresets 仍返回 BUILTIN_PRESETS', async () => {
+    const repo = new LocalRepository()
+    const list = await repo.getPresets()
+    expect(list.length).toBeGreaterThanOrEqual(5)
+    expect(list.every((p) => p.kind === 'builtin')).toBe(true)
+    expect(list[0].id).toBe('builtin:default')
+  })
+
+  it('savePresets + getPresets round-trip：内置在前 + user 在后', async () => {
+    const repo = new LocalRepository()
+    const now = Date.now()
+    const user1 = {
+      id: 'user-1',
+      name: '我的方案 A',
+      kind: 'user' as const,
+      settings: { theme: 'dark' as const, cardSize: 'standard' as const },
+      createdAt: now,
+      updatedAt: now,
+    }
+    const user2 = {
+      id: 'user-2',
+      name: '我的方案 B',
+      kind: 'user' as const,
+      settings: { theme: 'light' as const },
+      createdAt: now + 1,
+      updatedAt: now + 1,
+    }
+    // savePresets 接受混合输入也无碍：builtin 部分会被过滤掉
+    await repo.savePresets([user1, user2])
+    const list = await repo.getPresets()
+    const builtinCount = list.filter((p) => p.kind === 'builtin').length
+    const users = list.filter((p) => p.kind === 'user')
+    expect(builtinCount).toBeGreaterThanOrEqual(5)
+    expect(users).toHaveLength(2)
+    expect(users.map((p) => p.id)).toEqual(['user-1', 'user-2'])
+  })
+
+  it('savePresets 不会让 user 列表里混入 builtin 写盘（防污染）', async () => {
+    const repo = new LocalRepository()
+    // 故意传入一条 builtin，期待被过滤
+    const fakeBuiltin = {
+      id: 'builtin:fake',
+      name: '伪装内置',
+      kind: 'builtin' as const,
+      settings: { theme: 'dark' as const },
+      createdAt: 0,
+      updatedAt: 0,
+    }
+    await repo.savePresets([fakeBuiltin])
+    // 落地 key 里应该没有任何 user 预设
+    const raw = await chrome.storage.local.get('curio:presets')
+    expect(raw['curio:presets']).toEqual([])
+  })
+
+  it('clearPresets 仅清 user，不动 builtin', async () => {
+    const repo = new LocalRepository()
+    await repo.savePresets([
+      {
+        id: 'user-1',
+        name: 'X',
+        kind: 'user',
+        settings: {},
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    ])
+    await repo.clearPresets()
+    const list = await repo.getPresets()
+    expect(list.every((p) => p.kind === 'builtin')).toBe(true)
+  })
+
+  it('clear() 调过后 user 预设也被清掉（数据管理完全重置场景）', async () => {
+    const repo = new LocalRepository()
+    await repo.savePresets([
+      {
+        id: 'user-1',
+        name: 'X',
+        kind: 'user',
+        settings: {},
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    ])
+    await repo.clear()
+    const list = await repo.getPresets()
+    expect(list.every((p) => p.kind === 'builtin')).toBe(true)
+  })
+})

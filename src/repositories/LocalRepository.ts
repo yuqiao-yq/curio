@@ -3,9 +3,10 @@ import type {
   BookmarkCard,
   Category,
   ExportData,
+  StylePreset,
   UserSettings,
 } from '../types/bookmark'
-import { DEFAULT_SETTINGS } from '../types/bookmark'
+import { BUILTIN_PRESETS, DEFAULT_SETTINGS } from '../types/bookmark'
 import type {
   BookmarkRepository,
   BulkImportMode,
@@ -16,6 +17,8 @@ const KEYS = {
   categories: 'curio:categories',
   cards: 'curio:cards',
   settings: 'curio:settings',
+  /** 仅存 user 类样式预设；builtin 在内存里合并，避免每次升级 builtin 还要写盘 */
+  presets: 'curio:presets',
 } as const
 
 /**
@@ -170,6 +173,34 @@ export class LocalRepository implements BookmarkRepository {
     await browser.storage.local.set({ [KEYS.settings]: settings })
   }
 
+  // ---------- 样式预设 ----------
+  /**
+   * 取全部预设：内置（来自 BUILTIN_PRESETS 常量）+ 用户预设（落地的）。
+   * 内置始终排前面，保证 UI 列表稳定；同一进程多次调用结果一致。
+   */
+  async getPresets(): Promise<StylePreset[]> {
+    const r = await browser.storage.local.get(KEYS.presets)
+    const raw = r[KEYS.presets]
+    const userPresets: StylePreset[] = Array.isArray(raw)
+      ? (raw as StylePreset[]).filter((p) => p && p.kind === 'user')
+      : []
+    return [...BUILTIN_PRESETS, ...userPresets]
+  }
+
+  /**
+   * 保存用户预设。入参可以包含 builtin（UI 简单起见传完整列表），
+   * 这里会过滤掉，只把 kind === 'user' 的写盘。
+   */
+  async savePresets(list: StylePreset[]): Promise<void> {
+    const userOnly = list.filter((p) => p && p.kind === 'user')
+    await browser.storage.local.set({ [KEYS.presets]: userOnly })
+  }
+
+  /** 清空所有用户预设（不动 builtin） */
+  async clearPresets(): Promise<void> {
+    await browser.storage.local.remove(KEYS.presets)
+  }
+
   // ---------- 批量 ----------
   async bulkImport(
     data: ExportData,
@@ -292,6 +323,7 @@ export class LocalRepository implements BookmarkRepository {
       KEYS.categories,
       KEYS.cards,
       KEYS.settings,
+      KEYS.presets,
     ])
   }
 }
