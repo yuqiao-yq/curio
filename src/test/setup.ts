@@ -12,8 +12,23 @@ import { vi, beforeEach } from 'vitest'
 
 // ── chrome.* 最小 mock ──────────────────────────────────────────────
 type Listener = (...args: unknown[]) => void
+const globalStorageListeners = new Set<Listener>()
+const lockTails = new Map<string, Promise<unknown>>()
+Object.defineProperty(navigator, 'locks', {
+  configurable: true,
+  value: {
+    request: <T>(name: string, action: () => Promise<T>) => {
+      const next = (lockTails.get(name) ?? Promise.resolve()).catch(() => {}).then(action)
+      lockTails.set(
+        name,
+        next.catch(() => {}),
+      )
+      return next
+    },
+  },
+})
 
-function makeStorageArea() {
+function makeStorageArea(area: string) {
   let store: Record<string, unknown> = {}
   const listeners = new Set<Listener>()
   return {
@@ -22,26 +37,27 @@ function makeStorageArea() {
       store = {}
     },
     get: vi.fn((keys: string | string[] | Record<string, unknown> | null) => {
-      if (keys == null) return Promise.resolve({ ...store })
-      if (typeof keys === 'string') return Promise.resolve({ [keys]: store[keys] })
+      if (keys == null) return Promise.resolve(structuredClone(store))
+      if (typeof keys === 'string') return Promise.resolve(structuredClone({ [keys]: store[keys] }))
       if (Array.isArray(keys)) {
         const out: Record<string, unknown> = {}
         keys.forEach((k) => (out[k] = store[k]))
-        return Promise.resolve(out)
+        return Promise.resolve(structuredClone(out))
       }
       const out: Record<string, unknown> = {}
       for (const k of Object.keys(keys)) {
         out[k] = store[k] ?? (keys as Record<string, unknown>)[k]
       }
-      return Promise.resolve(out)
+      return Promise.resolve(structuredClone(out))
     }),
     set: vi.fn((items: Record<string, unknown>) => {
       const changes: Record<string, { oldValue?: unknown; newValue?: unknown }> = {}
       for (const [k, v] of Object.entries(items)) {
         changes[k] = { oldValue: store[k], newValue: v }
-        store[k] = v
+        store[k] = structuredClone(v)
       }
-      listeners.forEach((fn) => fn(changes, 'local'))
+      listeners.forEach((fn) => fn(changes, area))
+      globalStorageListeners.forEach((fn) => fn(changes, area))
       return Promise.resolve()
     }),
     remove: vi.fn((keys: string | string[]) => {
@@ -51,7 +67,8 @@ function makeStorageArea() {
         changes[k] = { oldValue: store[k] }
         delete store[k]
       })
-      listeners.forEach((fn) => fn(changes, 'local'))
+      listeners.forEach((fn) => fn(changes, area))
+      globalStorageListeners.forEach((fn) => fn(changes, area))
       return Promise.resolve()
     }),
     clear: vi.fn(() => {
@@ -67,12 +84,20 @@ function makeStorageArea() {
 
 const chromeMock = {
   storage: {
-    local: makeStorageArea(),
-    sync: makeStorageArea(),
+    local: makeStorageArea('local'),
+    sync: makeStorageArea('sync'),
     onChanged: {
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
+      addListener: vi.fn((fn: Listener) => {
+        globalStorageListeners.add(fn)
+      }),
+      removeListener: vi.fn((fn: Listener) => {
+        globalStorageListeners.delete(fn)
+      }),
     },
+  },
+  permissions: {
+    request: vi.fn(async () => true),
+    contains: vi.fn(async () => true),
   },
   bookmarks: {
     getTree: vi.fn(() => Promise.resolve([])),

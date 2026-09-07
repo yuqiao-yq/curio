@@ -41,24 +41,24 @@ export default defineConfig({
     permissions: [
       'bookmarks',
       'storage',
-      // 'history' 用于「最近使用」模块的「包含浏览器历史」可选功能
-      // 默认关闭，用户在 UI 中主动开启后才会调用 history.search
-      'history',
+      ...(browser === 'chrome' && process.env.GOOGLE_DRIVE_CLIENT_ID ? ['identity'] : []),
       // 'tabs' 用于工具栏 popup「添加当前页面」功能：读取 active tab 的 title/url
       'tabs',
       ...(browser === 'chrome' ? ['favicon'] : []),
     ],
-    /**
-     * V2.0 §6.1「网页内容抓取」需要跨域 fetch 用户已收藏的网页，
-     * 必须声明 host_permissions: <all_urls>。这是一个用户授权层面的重大变更，
-     * 用户在浏览器扩展管理页能直接看到「读取所有网站的数据」。
-     *
-     * 我们的承诺（产品红线，写在 SettingsTab 的隐私弹窗里）：
-     * - 默认完全不抓取；用户在「⚙ 设置 → 内容抓取」主动同意 + 选范围才会触发
-     * - 抓到的正文仅写入本机 IndexedDB（pageContents 表），永不上传
-     * - 不会读 cookie / Authorization 头，仅 fetch 公开 HTML
-     */
-    host_permissions: ['<all_urls>'],
+    // 网站与历史权限由用户使用对应功能时申请。
+    // Firefox MV2 把可选网站匹配模式放在 optional_permissions 中。
+    ...(browser === 'firefox'
+      ? { optional_permissions: ['history', '<all_urls>'] }
+      : { optional_host_permissions: ['<all_urls>'], optional_permissions: ['history'] }),
+    ...(browser === 'chrome' && process.env.GOOGLE_DRIVE_CLIENT_ID
+      ? {
+          oauth2: {
+            client_id: process.env.GOOGLE_DRIVE_CLIENT_ID,
+            scopes: ['https://www.googleapis.com/auth/drive.appdata'],
+          },
+        }
+      : {}),
     // WXT 默认会按文件名自动从 public/icon/*.png 生成 icons 字段，
     // 但商店审核偶尔会因「未显式声明」打回；这里显式列出 16/32/48/96/128。
     // 文件实际存在于 public/icon/ 下（由 scripts/generate-icons.mjs 产出）。
@@ -79,8 +79,7 @@ export default defineConfig({
     },
   }),
   // 抑制 Firefox 2025-11 起新增的 data_collection_permissions 提示
-  // （本扩展不收集任何用户数据，全部本地存储）
-  // 真正发布到 AMO 时再补充正式声明
+  // 真正发布到 AMO 时，需按可选同步和模型请求补充正式数据声明。
   // https://extensionworkshop.com/documentation/develop/firefox-builtin-data-consent/
   suppressWarnings: {
     firefoxDataCollection: true,

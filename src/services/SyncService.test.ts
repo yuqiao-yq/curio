@@ -11,7 +11,7 @@
  *  - wipeRemote：清空云端 + 重置本地 meta
  *  - enableSync / disableSync：开关效果
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   KEY_BM_CHUNK_PREFIX,
   KEY_BM_MANIFEST,
@@ -35,7 +35,12 @@ import {
   syncableChanged,
   wipeRemote,
 } from './SyncService'
-import { DEFAULT_SETTINGS, type BookmarkCard, type Category, type UserSettings } from '../types/bookmark'
+import {
+  DEFAULT_SETTINGS,
+  type BookmarkCard,
+  type Category,
+  type UserSettings,
+} from '../types/bookmark'
 
 // ─── helpers ──────────────────────────────────────────
 
@@ -104,12 +109,9 @@ describe('pickSyncable / syncableChanged', () => {
   })
 
   it('只有黑名单字段变化 → syncableChanged=false', () => {
-    expect(
-      syncableChanged(
-        mkSettings({ wallpaper: 'a' }),
-        mkSettings({ wallpaper: 'b' }),
-      ),
-    ).toBe(false)
+    expect(syncableChanged(mkSettings({ wallpaper: 'a' }), mkSettings({ wallpaper: 'b' }))).toBe(
+      false,
+    )
   })
 
   it('白名单不漏字段（防漏检查）', () => {
@@ -347,7 +349,7 @@ describe('pullBookmarksForce', () => {
     expect(r.payload?.cards.map((c) => c.id)).toEqual(['1', '2'])
   })
 
-  it('远端缺块 → 返回 {} 而非崩溃', async () => {
+  it('远端缺块 → 明确报错且不覆盖本地', async () => {
     await enable()
     // 手工写一个声称有 5 chunk 但只写了 1 chunk 的脏 manifest
     await chrome.storage.sync.set({
@@ -356,7 +358,7 @@ describe('pullBookmarksForce', () => {
     })
     const r = await pullBookmarksForce()
     expect(r.payload).toBeUndefined()
-    expect(r.error).toBeUndefined()
+    expect(r.error).toMatch(/完整/)
   })
 
   it('JSON 无法解析 → 返回 {}', async () => {
@@ -400,13 +402,18 @@ describe('handleBookmarksRemoteChange: 自回声防抖', () => {
     await setMeta({ bookmarks: { lastPushTs: 1, lastPullTs: 1 } })
 
     const sync = await chrome.storage.sync.get(KEY_BM_MANIFEST)
-    const mf = sync[KEY_BM_MANIFEST] as { ts: number; chunkCount: number; totalBytes: number; version: number }
+    const mf = sync[KEY_BM_MANIFEST] as {
+      ts: number
+      chunkCount: number
+      totalBytes: number
+      version: number
+    }
     const r = await handleBookmarksRemoteChange(mf)
     expect(r.payload?.categories.map((c) => c.id)).toEqual(['a'])
     expect(r.ts).toBe(mf.ts)
 
     const meta = await getMeta()
-    expect(meta.bookmarks.lastPullTs).toBe(mf.ts)
+    expect(meta.bookmarks.lastPullTs).toBe(1) // 读取不等于已落盘
   })
 
   it('null manifest → 忽略', async () => {
@@ -419,11 +426,7 @@ describe('handleBookmarksRemoteChange: 自回声防抖', () => {
 
 describe('enableSync / disableSync / wipeRemote', () => {
   it('enableSync 把 settings + bookmarks 推到云端', async () => {
-    const r = await enableSync(
-      mkSettings({ theme: 'dark' }),
-      [mkCat('a')],
-      [mkCard('1')],
-    )
+    const r = await enableSync(mkSettings({ theme: 'dark' }), [mkCat('a')], [mkCard('1')])
     expect(r.ok).toBe(true)
 
     const sync = await chrome.storage.sync.get(null)
@@ -475,20 +478,28 @@ describe('enableSync / disableSync / wipeRemote', () => {
     expect(meta.settings.lastPushTs).toBeUndefined()
     expect(meta.bookmarks.lastPushTs).toBeUndefined()
   })
+
+  it('清空云端失败时保留数据并暴露错误，不能误报成功', async () => {
+    await chrome.storage.sync.set({ [KEY_SETTINGS_PAYLOAD]: { ts: 1 } })
+    vi.mocked(chrome.storage.sync.remove).mockRejectedValueOnce(new Error('network error'))
+    await expect(wipeRemote()).rejects.toThrow('network error')
+    expect((await getMeta()).lastError).toContain('清空云端失败')
+    expect((await chrome.storage.sync.get(null))[KEY_SETTINGS_PAYLOAD]).toBeTruthy()
+  })
 })
 
 // ─── bootstrapSync ───────────────────────────────────
 
 describe('bootstrapSync', () => {
   it('未启用 → 直接 noop', async () => {
-    const r = await bootstrapSync(mkSettings(), [], [])
+    const r = await bootstrapSync(mkSettings())
     expect(r.appliedSettings).toBeUndefined()
     expect(r.appliedBookmarks).toBeUndefined()
   })
 
   it('远端为空 → 推本机', async () => {
     await enable()
-    await bootstrapSync(mkSettings({ theme: 'dark' }), [mkCat('a')], [mkCard('1')])
+    await bootstrapSync(mkSettings({ theme: 'dark' }))
     const sync = await chrome.storage.sync.get(null)
     expect(sync[KEY_SETTINGS_PAYLOAD]).toBeTruthy()
     expect(sync[KEY_BM_MANIFEST]).toBeTruthy()
@@ -508,7 +519,7 @@ describe('bootstrapSync', () => {
     // 本地 lastPushTs 假装很早
     await setMeta({ settings: { lastPushTs: 1 } })
 
-    const r = await bootstrapSync(mkSettings({ theme: 'light' }), [], [])
+    const r = await bootstrapSync(mkSettings({ theme: 'light' }))
     expect(r.appliedSettings?.theme).toBe('dark')
 
     // 不应覆盖远端的较新 payload
@@ -524,10 +535,7 @@ describe('estimateBookmarksBytes', () => {
     const n = estimateBookmarksBytes([mkCat('a')], [mkCard('1')])
     expect(n).toBeGreaterThan(0)
     // 加数据，字节数必须单调上升
-    const n2 = estimateBookmarksBytes(
-      [mkCat('a')],
-      [mkCard('1'), mkCard('2')],
-    )
+    const n2 = estimateBookmarksBytes([mkCat('a')], [mkCard('1'), mkCard('2')])
     expect(n2).toBeGreaterThan(n)
   })
 })
@@ -564,4 +572,71 @@ describe('getMeta / setMeta', () => {
     const sync = await chrome.storage.sync.get(KEY_LOCAL_META)
     expect(sync[KEY_LOCAL_META]).toBeUndefined()
   })
+})
+
+describe('同步 UTF-8 与失败保护', () => {
+  it.each(['中文'.repeat(4000), '😀'.repeat(4000), '\\"'.repeat(4000)])(
+    '多字节 / 转义分块能在真实配额内往返: %#',
+    async (description) => {
+      await enable()
+      const card = mkCard('utf8', { description })
+      const r = await pushBookmarks([mkCat('cat1')], [card])
+      expect(r.ok).toBe(true)
+      const stored = await chrome.storage.sync.get(null)
+      for (const [key, value] of Object.entries(stored)) {
+        expect(
+          Buffer.byteLength(key) + Buffer.byteLength(JSON.stringify(value)),
+        ).toBeLessThanOrEqual(8192)
+      }
+      expect((await pullBookmarksForce()).payload?.cards[0]).toEqual(card)
+    },
+  )
+
+  it('中文总量超过 100KB 时拒绝写入', async () => {
+    await enable()
+    const r = await pushBookmarks([], [mkCard('big', { description: '中'.repeat(40000) })])
+    expect(r.ok).toBe(false)
+    expect(r.quotaHint).toBeTruthy()
+    expect((await chrome.storage.sync.get(null))[KEY_BM_MANIFEST]).toBeUndefined()
+  })
+
+  it('不完整远端不能被 bootstrap 当成空库上传覆盖', async () => {
+    await enable()
+    const manifest = { version: 1, ts: 12, chunkCount: 2, totalBytes: 100 }
+    await chrome.storage.sync.set({ [KEY_BM_MANIFEST]: manifest, [keyBmChunk(0)]: '{}' })
+    const result = await bootstrapSync(mkSettings())
+    expect(result.warnings?.length).toBeGreaterThan(0)
+    expect((await chrome.storage.sync.get(KEY_BM_MANIFEST))[KEY_BM_MANIFEST]).toEqual(manifest)
+  })
+
+  it('并发更新两条同步状态不丢字段', async () => {
+    await Promise.all([
+      setMeta({ settings: { lastPushTs: 10 } }),
+      setMeta({ bookmarks: { lastPushTs: 20 } }),
+    ])
+    const m = await getMeta()
+    expect(m.settings.lastPushTs).toBe(10)
+    expect(m.bookmarks.lastPushTs).toBe(20)
+  })
+})
+
+it('首次启用合并已有云端数据，空本地不会清空远端', async () => {
+  await enable()
+  await pushBookmarks([mkCat('remote')], [mkCard('remote-card', { categoryId: 'remote' })])
+  await disableSync()
+  const result = await enableSync(mkSettings(), [], [])
+  expect(result.ok).toBe(true)
+  expect((await pullBookmarksForce()).payload?.cards.map((c) => c.id)).toEqual(['remote-card'])
+})
+
+it('混合或损坏的分块即使是合法 JSON 也不能应用', async () => {
+  await enable()
+  await pushBookmarks([mkCat('a')], [mkCard('original')])
+  const stored = await chrome.storage.sync.get(keyBmChunk(0))
+  await chrome.storage.sync.set({
+    [keyBmChunk(0)]: String(stored[keyBmChunk(0)]).replace('original', 'modified'),
+  })
+  const result = await pullBookmarksForce()
+  expect(result.error).toBeTruthy()
+  expect(result.payload).toBeUndefined()
 })

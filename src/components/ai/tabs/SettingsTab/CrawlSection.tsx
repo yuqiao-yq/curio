@@ -1,3 +1,4 @@
+import { requestSiteAccess } from '../../../../services/sitePermissions'
 import { useEffect, useMemo, useState } from 'react'
 import { useAISettingsStore } from '../../../../ai/useAISettingsStore'
 import { useBookmarkStore } from '../../../../stores/useBookmarkStore'
@@ -8,10 +9,7 @@ import {
   runCrawler,
   selectCardsForCrawling,
 } from '../../../../ai/services/crawler'
-import {
-  clearPageContents,
-  countByStatus,
-} from '../../../../repositories/PageContentsDB'
+import { clearPageContents, countByStatus } from '../../../../repositories/PageContentsDB'
 import { usePageIndex } from '../../../../ai/services/usePageIndex'
 import { cn } from '../../../../utils/cn'
 import { toast } from '../../../../stores/useToastStore'
@@ -63,10 +61,7 @@ export function CrawlSection() {
 
   const [status, setStatus] = useState<CrawlStatus | null>(null)
   const [showPrivacyDialog, setShowPrivacyDialog] = useState(false)
-  const topCategories = useMemo(
-    () => categories.filter((c) => !c.parentId),
-    [categories],
-  )
+  const topCategories = useMemo(() => categories.filter((c) => !c.parentId), [categories])
 
   // 拉一次状态：mount 时 + 任务结束后 + cards 变了
   useEffect(() => {
@@ -91,8 +86,7 @@ export function CrawlSection() {
   }, [cards, stage])
 
   const running = stage === 'running'
-  const pct =
-    progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0
+  const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0
 
   // 选定范围下的待处理预估数（用于按钮上的 "(N)" 显示）
   const [estimatedPending, setEstimatedPending] = useState<number | null>(null)
@@ -110,6 +104,15 @@ export function CrawlSection() {
     if (!settings.crawl.agreed) {
       // 没同意 → 弹隐私窗
       setShowPrivacyDialog(true)
+      return
+    }
+    try {
+      if (!(await requestSiteAccess())) {
+        toast.info('未开始抓取', '未授予网站访问权限')
+        return
+      }
+    } catch (err) {
+      toast.error('权限申请失败', String(err))
       return
     }
     const targets = await selectCardsForCrawling(range, cards, categories)
@@ -140,10 +143,7 @@ export function CrawlSection() {
       // 通知卡片角标层：indexedIds 集合可能变了
       void refreshPageIndex()
       if (result.failed === 0) {
-        toast.success(
-          '内容抓取完成',
-          `成功 ${result.ok} / ${result.total} 条`,
-        )
+        toast.success('内容抓取完成', `成功 ${result.ok} / ${result.total} 条`)
       } else {
         toast.warning(
           '内容抓取部分失败',
@@ -185,8 +185,7 @@ export function CrawlSection() {
     if (
       !(await confirmDialog({
         title: '清空所有已抓取的网页正文？',
-        message:
-          '清空后语义搜索 / RAG 问答的「内容召回」将不可用，需要重新抓取。',
+        message: '清空后语义搜索 / RAG 问答的「内容召回」将不可用，需要重新抓取。',
         confirmText: '清空',
         danger: true,
       }))
@@ -209,8 +208,7 @@ export function CrawlSection() {
     if (
       !(await confirmDialog({
         title: '撤回内容抓取同意？',
-        message:
-          '撤回后，下次再次启动抓取时会重新弹隐私说明。本地已抓取的内容保留。',
+        message: '撤回后，下次再次启动抓取时会重新弹隐私说明。本地已抓取的内容保留。',
         confirmText: '撤回同意',
         danger: true,
       }))
@@ -227,9 +225,12 @@ export function CrawlSection() {
         内容抓取
       </h4>
       <p className="text-[11px] text-slate-400 mb-2 leading-relaxed">
-        抓取已收藏网页的正文（用 Mozilla Readability 提取主体内容），写入本机
-        IndexedDB，供 V2.0 RAG 问答 / 语义搜索召回。
-        <span className="text-slate-500"> 不会上传任何内容到服务器。</span>
+        抓取已收藏网页的正文（用 Mozilla Readability 提取主体内容），写入本机 IndexedDB，供 V2.0 RAG
+        问答 / 语义搜索召回。
+        <span className="text-slate-500">
+          {' '}
+          抓取只保存本机；启用「允许 AI 使用已抓取正文」后，相关片段会发送给所选模型。
+        </span>
       </p>
 
       {/* 状态网格 */}
@@ -243,11 +244,7 @@ export function CrawlSection() {
         {status ? (
           <div className="grid grid-cols-2 gap-x-3 gap-y-1">
             <StatRow label="可抓取书签" value={status.crawlableTotal} />
-            <StatRow
-              label="已成功索引"
-              value={status.ok}
-              tone={status.ok > 0 ? 'ok' : 'normal'}
-            />
+            <StatRow label="已成功索引" value={status.ok} tone={status.ok > 0 ? 'ok' : 'normal'} />
             <StatRow
               label="待抓取"
               value={status.missing}
@@ -355,11 +352,7 @@ export function CrawlSection() {
       {stage === 'error' && (
         <div className="mt-2 rounded-md border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-2.5 py-1.5 text-[11px] text-red-600 dark:text-red-300 break-words">
           {errorMessage}
-          <button
-            type="button"
-            onClick={reset}
-            className="ml-2 underline hover:no-underline"
-          >
+          <button type="button" onClick={reset} className="ml-2 underline hover:no-underline">
             知道了
           </button>
         </div>
@@ -370,9 +363,7 @@ export function CrawlSection() {
         <div className="mt-2 rounded-md border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 px-2.5 py-1.5 text-[11px] text-emerald-700 dark:text-emerald-300">
           ✓ 上次抓取：成功 {lastResult.ok} / {lastResult.total}
           {lastResult.failed > 0 && (
-            <span className="text-amber-600 dark:text-amber-300">
-              （失败 {lastResult.failed}）
-            </span>
+            <span className="text-amber-600 dark:text-amber-300">（失败 {lastResult.failed}）</span>
           )}
         </div>
       )}
@@ -393,9 +384,7 @@ export function CrawlSection() {
         >
           {!settings.crawl.agreed ? '✓ 同意并开始' : '📥 开始抓取'}
           {estimatedPending !== null && estimatedPending > 0 && (
-            <span className="ml-1 tabular-nums opacity-80">
-              ({estimatedPending})
-            </span>
+            <span className="ml-1 tabular-nums opacity-80">({estimatedPending})</span>
           )}
         </ActionBtn>
         <div className="flex-1" />
@@ -477,24 +466,24 @@ function CrawlPrivacyDialog({
         <div className="px-5 py-4 space-y-3 text-xs text-slate-600 dark:text-slate-300 leading-relaxed flex-1 min-h-0 overflow-y-auto">
           <p>
             Curio 即将代你访问已收藏的{' '}
-            <span className="font-semibold text-brand tabular-nums">
-              {pendingCount}
-            </span>{' '}
+            <span className="font-semibold text-brand tabular-nums">{pendingCount}</span>{' '}
             个网页，下载其 HTML，用 Mozilla Readability 提取正文并保存到{' '}
             <span className="font-mono text-slate-500">本机 IndexedDB</span>。
           </p>
           <ul className="list-disc list-inside space-y-1 text-slate-500 dark:text-slate-400">
             <li>
-              <span className="text-slate-700 dark:text-slate-200 font-medium">绝不上传</span>
-              ：内容只存在你这台浏览器里
+              <span className="text-slate-700 dark:text-slate-200 font-medium">本地保存</span>
+              ：抓取不会上传正文。另行开启 AI 正文使用后，相关片段会发送给你配置的模型服务。
             </li>
             <li>
               <span className="text-slate-700 dark:text-slate-200 font-medium">不带登录态</span>
-              ：fetch 时显式 <code className="font-mono">credentials: 'omit'</code>，
-              不会发送 cookie / Authorization
+              ：fetch 时显式 <code className="font-mono">credentials: 'omit'</code>， 不会发送
+              cookie / Authorization
             </li>
             <li>
-              <span className="text-slate-700 dark:text-slate-200 font-medium">仅在你主动操作时</span>
+              <span className="text-slate-700 dark:text-slate-200 font-medium">
+                仅在你主动操作时
+              </span>
               ：默认完全关闭；后台不会自动跑
             </li>
             <li>

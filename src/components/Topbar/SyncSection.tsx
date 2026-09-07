@@ -1,10 +1,7 @@
 import { useEffect, useState } from 'react'
 import { browser } from 'wxt/browser'
 import type { UserSettings } from '../../types/bookmark'
-import {
-  cancelPendingSyncPush,
-  useBookmarkStore,
-} from '../../stores/useBookmarkStore'
+import { cancelPendingSyncPush, useBookmarkStore } from '../../stores/useBookmarkStore'
 import {
   disableSync,
   enableSync,
@@ -14,7 +11,7 @@ import {
   KEY_LOCAL_META,
   pullBookmarksForce,
   pullSettingsForce,
-  pushBookmarks,
+  pushLocalBookmarks,
   pushSettings,
   SYNC_QUOTA,
   SYNCABLE_SETTINGS_KEYS,
@@ -22,6 +19,11 @@ import {
   type SyncableSettings,
   type SyncMeta,
 } from '../../services/SyncService'
+import {
+  BOOKMARK_SYNC_STATE_KEY,
+  getBookmarkSyncState,
+  type BookmarkSyncState,
+} from '../../services/bookmarkSyncState'
 import { toast } from '../../stores/useToastStore'
 import { confirmDialog } from '../Dialog'
 import { cn } from '../../utils/cn'
@@ -48,6 +50,7 @@ export function SyncSection({ settings }: { settings: UserSettings }) {
     bookmarks: {},
   })
   const [loading, setLoading] = useState(false)
+  const [pendingBookmarks, setPendingBookmarks] = useState(false)
   const supported = hasSyncStorage()
   const applyRemoteSettings = useBookmarkStore((s) => s.applyRemoteSettings)
   const applyRemoteBookmarks = useBookmarkStore((s) => s.applyRemoteBookmarks)
@@ -68,18 +71,25 @@ export function SyncSection({ settings }: { settings: UserSettings }) {
     void getMeta().then((m) => {
       if (mounted) setMeta(m)
     })
-    const storageApi = browser?.storage as {
-      onChanged?: {
-        addListener: (cb: (...args: unknown[]) => void) => void
-        removeListener: (cb: (...args: unknown[]) => void) => void
-      }
-    } | undefined
+    void getBookmarkSyncState()
+      .then((state) => {
+        if (mounted) setPendingBookmarks(!!state?.pending)
+      })
+      .catch((err) => toast.error('读取同步状态失败', String(err)))
+    const storageApi = browser?.storage as
+      | {
+          onChanged?: {
+            addListener: (cb: (...args: unknown[]) => void) => void
+            removeListener: (cb: (...args: unknown[]) => void) => void
+          }
+        }
+      | undefined
     if (!storageApi?.onChanged) return
-    const listener = (
-      changes: Record<string, { newValue?: unknown }>,
-      areaName: string,
-    ) => {
+    const listener = (changes: Record<string, { newValue?: unknown }>, areaName: string) => {
       if (areaName !== 'local') return
+      const stateChange = changes[BOOKMARK_SYNC_STATE_KEY]
+      if (stateChange)
+        setPendingBookmarks(!!(stateChange.newValue as BookmarkSyncState | undefined)?.pending)
       const ch = changes[KEY_LOCAL_META]
       if (!ch) return
       const next = ch.newValue as SyncMeta | undefined
@@ -98,6 +108,7 @@ export function SyncSection({ settings }: { settings: UserSettings }) {
     try {
       if (enabled) {
         const r = await enableSync(settings, categories, cards)
+        await useBookmarkStore.getState().init()
         if (!r.ok) {
           // 配额超限是软失败：enableSync 内部已保留 enabled=true，
           // 用户清理书签后下次自动推送仍可用
@@ -106,16 +117,15 @@ export function SyncSection({ settings }: { settings: UserSettings }) {
             r.quotaHint ?? r.error ?? '未知错误',
           )
         } else {
-          toast.success(
-            '已开启跨设备同步',
-            '本机的偏好与书签已上传作为初始版本',
-          )
+          toast.success('已开启跨设备同步', '已合并已有云端书签，并提交当前版本给浏览器同步服务')
         }
       } else {
         await disableSync()
         toast.info('已关闭同步', '云端 payload 仍保留，可随时重新开启')
       }
       setMeta(await getMeta())
+    } catch (err) {
+      toast.error('同步操作失败', err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
     }
@@ -126,11 +136,11 @@ export function SyncSection({ settings }: { settings: UserSettings }) {
     setLoading(true)
     try {
       const ps = await pushSettings(settings)
-      const pb = await pushBookmarks(categories, cards)
+      const pb = await pushLocalBookmarks({ force: true })
       if (ps.ok && pb.ok) {
         toast.success(
-          '已推送到云端',
-          `偏好 + 书签（${formatBytes(pb.bytes ?? 0)}）已上传，其它设备稍后会自动拉取`,
+          '已提交浏览器同步',
+          `偏好 + 书签（${formatBytes(pb.bytes ?? 0)}）已写入同步服务，远端设备是否收到取决于浏览器连接状态`,
         )
       } else if (!ps.ok && !pb.ok) {
         toast.error('推送失败', `${ps.error ?? ''} / ${pb.quotaHint ?? pb.error ?? ''}`)
@@ -143,6 +153,8 @@ export function SyncSection({ settings }: { settings: UserSettings }) {
         toast.error('偏好推送失败', ps.error ?? '未知错误')
       }
       setMeta(await getMeta())
+    } catch (err) {
+      toast.error('同步操作失败', err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
     }
@@ -169,10 +181,7 @@ export function SyncSection({ settings }: { settings: UserSettings }) {
       // 导致拉回的「云端=本地新值」让覆盖看似无效。
       cancelPendingSyncPush()
       const beforeSettings = useBookmarkStore.getState().settings
-      const [rs, rb] = await Promise.all([
-        pullSettingsForce(),
-        pullBookmarksForce(),
-      ])
+      const [rs, rb] = await Promise.all([pullSettingsForce(), pullBookmarksForce()])
 
       const lines: string[] = []
       let errored = false
@@ -195,8 +204,8 @@ export function SyncSection({ settings }: { settings: UserSettings }) {
       if (rb.error) {
         lines.push(`书签：${rb.error}`)
         errored = true
-      } else if (rb.payload) {
-        await applyRemoteBookmarks(rb.payload)
+      } else if (rb.payload && rb.ts !== undefined) {
+        await applyRemoteBookmarks(rb.payload, rb.ts, true)
         lines.push(
           `书签：${rb.payload.categories.length} 分类 / ${rb.payload.cards.length} 卡片` +
             `（${formatBytes(rb.bytes ?? 0)}）已应用`,
@@ -211,6 +220,8 @@ export function SyncSection({ settings }: { settings: UserSettings }) {
         toast.success('已应用云端数据', lines.join('\n'))
       }
       setMeta(await getMeta())
+    } catch (err) {
+      toast.error('同步操作失败', err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
     }
@@ -231,9 +242,12 @@ export function SyncSection({ settings }: { settings: UserSettings }) {
     }
     setLoading(true)
     try {
+      cancelPendingSyncPush()
       await wipeRemote()
       toast.success('已清空云端')
       setMeta(await getMeta())
+    } catch (err) {
+      toast.error('同步操作失败', err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
     }
@@ -292,13 +306,18 @@ export function SyncSection({ settings }: { settings: UserSettings }) {
             <span className="text-slate-500 dark:text-slate-300">壁纸、侧栏宽度</span>等
             体积大或设备相关的字段不在范围内。
             <br />
-            冲突策略为「整包后写覆盖先写」，两台设备同时改时，后保存的会覆盖另一端。
+            同步仍按整包传输；发现本地未推送且远端有更新时会暂停，请选择「立即推送」或「从云端覆盖」。远端更新可能延迟到达，尚不能保证逐条合并。
           </div>
         </div>
       </label>
 
       {/* 状态：基础 / 错误 / 两条管线分别展示 */}
       <div className="mt-2 text-[11px] leading-relaxed">
+        {meta.enabled && pendingBookmarks && (
+          <div className="text-amber-600 dark:text-amber-400">
+            有本地书签待同步；关闭页面后仍会保留，下次打开时重试。
+          </div>
+        )}
         {meta.lastError ? (
           <div className="text-red-500">❗ {meta.lastError}</div>
         ) : baseStatus ? (
@@ -344,11 +363,7 @@ export function SyncSection({ settings }: { settings: UserSettings }) {
             <div
               className={cn(
                 'h-full transition-all',
-                overQuota
-                  ? 'bg-red-500'
-                  : usedPct > 75
-                    ? 'bg-amber-500'
-                    : 'bg-brand/70',
+                overQuota ? 'bg-red-500' : usedPct > 75 ? 'bg-amber-500' : 'bg-brand/70',
               )}
               style={{ width: `${Math.min(100, usedPct)}%` }}
             />
@@ -408,10 +423,7 @@ export function SyncSection({ settings }: { settings: UserSettings }) {
   )
 }
 
-function diffSyncable(
-  local: UserSettings,
-  remote: Partial<SyncableSettings>,
-): string[] {
+function diffSyncable(local: UserSettings, remote: Partial<SyncableSettings>): string[] {
   const out: string[] = []
   for (const k of SYNCABLE_SETTINGS_KEYS) {
     if (!(k in remote)) continue

@@ -62,9 +62,7 @@ export async function selectCardsForSummarizing(
 
   // 默认仅未写 description 的；'all' 模式才允许覆盖
   if (range.type !== 'all') {
-    candidates = candidates.filter(
-      (c) => !c.description || c.description.trim().length === 0,
-    )
+    candidates = candidates.filter((c) => !c.description || c.description.trim().length === 0)
   }
 
   return candidates
@@ -90,11 +88,7 @@ function collectDescendantIds(
 
 // ─── Prompt ──────────────────────────────────────
 
-function buildPrompt(input: {
-  title: string
-  domain: string
-  excerpt: string
-}): ChatMessage[] {
+function buildPrompt(input: { title: string; domain: string; excerpt: string }): ChatMessage[] {
   const system = `你是浏览器书签备注助手。基于网页的标题和正文摘录，
 生成一句话简短摘要（中文，≤ 25 字），描述这个网页是关于什么的。
 
@@ -176,9 +170,12 @@ export interface RunSummarizerResult {
   results: SummaryResult[]
 }
 
-export async function runSummarizer(
-  opts: RunSummarizerOptions,
-): Promise<RunSummarizerResult> {
+export async function runSummarizer(opts: RunSummarizerOptions): Promise<RunSummarizerResult> {
+  if (!opts.settings.privacy.sendPageContent) {
+    throw new Error(
+      '请先在 AI 设置中开启「允许 AI 使用已抓取正文」；摘要需要将正文片段发送给所选模型。',
+    )
+  }
   const concurrency = Math.max(1, Math.min(4, opts.concurrency ?? 2))
   const total = opts.cards.length
   if (total === 0) {

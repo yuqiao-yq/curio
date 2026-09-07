@@ -7,6 +7,7 @@ import {
   handleBookmarksRemoteChange,
   KEY_SETTINGS_PAYLOAD,
   KEY_BM_MANIFEST,
+  KEY_BM_CHUNK_PREFIX,
   type SettingsPayload,
   type BookmarksManifest,
 } from '../../src/services/SyncService'
@@ -27,6 +28,7 @@ import { usePageIndex } from '../../src/ai/services/usePageIndex'
 import { Onboarding, useOnboardingStore } from '../../src/components/Onboarding'
 import { useExternalLinkDrop } from '../../src/components/useExternalLinkDrop'
 import { runLegacyMigrationOnce } from '../../src/services/legacyMigration'
+import { subscribeLocalChanges } from '../../src/services/localChanges'
 
 /**
  * v0.21.x：AI 浮窗与副浮窗按需加载。
@@ -46,10 +48,12 @@ const SecondaryPanelsHost = lazy(() =>
 )
 
 export default function App() {
+  useEffect(() => subscribeLocalChanges(), [])
   const init = useBookmarkStore((s) => s.init)
   const initialized = useBookmarkStore((s) => s.initialized)
   const loading = useBookmarkStore((s) => s.loading)
   const categories = useBookmarkStore((s) => s.categories)
+  const collectionView = useBookmarkStore((s) => s.collectionView)
   const activeCategoryId = useBookmarkStore((s) => s.activeCategoryId)
   const importFromBrowser = useBookmarkStore((s) => s.importFromBrowser)
   const addCategory = useBookmarkStore((s) => s.addCategory)
@@ -74,8 +78,7 @@ export default function App() {
   const secondaryCount = useSecondaryPanelsStore((s) => s.panels.length)
 
   // 被动建议（§5.2）：FAB 红点 + 浮窗自动落到整理 Tab
-  const { shouldShow: hasPassiveHint, dismiss: dismissPassive } =
-    usePassiveSuggest()
+  const { shouldShow: hasPassiveHint, dismiss: dismissPassive } = usePassiveSuggest()
 
   // ─── 首次进入引导（v0.22.x）─────────────────────────
   // - init() 从 chrome.storage.local 恢复已完成的引导标记
@@ -106,14 +109,7 @@ export default function App() {
       // v0.22.x 首次引导：先 init 恢复标记，下面的 useEffect 据此决定要不要启动
       void initOnboarding()
     })()
-  }, [
-    init,
-    initPanel,
-    initAISettings,
-    initSecondaryPanels,
-    refreshPageIndex,
-    initOnboarding,
-  ])
+  }, [init, initPanel, initAISettings, initSecondaryPanels, refreshPageIndex, initOnboarding])
 
   // 引导启动决策：等三件事都到位
   //   1. onboardingHydrated：持久化标记已恢复（避免覆盖老用户的"已引导"状态）
@@ -159,31 +155,39 @@ export default function App() {
   //   （各自带自回声防抖；本机刚推的 ts <= lastPushTs 会被忽略）
   useEffect(() => {
     if (!initialized) return
-    const storageApi = browser?.storage as {
-      sync?: unknown
-      onChanged?: { addListener: (cb: (...args: unknown[]) => void) => void; removeListener: (cb: (...args: unknown[]) => void) => void }
-    } | undefined
+    const storageApi = browser?.storage as
+      | {
+          sync?: unknown
+          onChanged?: {
+            addListener: (cb: (...args: unknown[]) => void) => void
+            removeListener: (cb: (...args: unknown[]) => void) => void
+          }
+        }
+      | undefined
     let cancelled = false
     // 1) bootstrap：把远端 / 本机的差异在启动时拉齐（settings + bookmarks）
     void (async () => {
       const s = useBookmarkStore.getState()
-      const r = await bootstrapSync(s.settings, s.categories, s.cards)
+      const r = await bootstrapSync(s.settings)
       if (cancelled) return
       if (r.appliedSettings && Object.keys(r.appliedSettings).length > 0) {
         await useBookmarkStore.getState().applyRemoteSettings(r.appliedSettings)
       }
-      if (r.appliedBookmarks) {
-        await useBookmarkStore.getState().applyRemoteBookmarks(r.appliedBookmarks)
+      if (r.appliedBookmarks && r.bookmarksTs !== undefined) {
+        await useBookmarkStore.getState().applyRemoteBookmarks(r.appliedBookmarks, r.bookmarksTs)
       }
       // 引导期错误不阻断启动；用日志暴露给开发者，UI 会从 meta.lastError 拿到
       if (r.warnings && r.warnings.length > 0) {
         console.warn('[sync] bootstrap warnings:', r.warnings)
       }
-    })()
+    })().catch((err) => toast.error('同步失败，本地数据已保留', String(err)))
 
     // 2) onChanged 监听：两条远端键都要看
     if (!storageApi?.onChanged) return
-    const listener = (changes: Record<string, { newValue?: unknown; oldValue?: unknown }>, areaName: string) => {
+    const listener = (
+      changes: Record<string, { newValue?: unknown; oldValue?: unknown }>,
+      areaName: string,
+    ) => {
       if (areaName !== 'sync') return
       // settings payload 变更
       const chSettings = changes[KEY_SETTINGS_PAYLOAD]
@@ -194,19 +198,19 @@ export default function App() {
           if (applied && Object.keys(applied).length > 0) {
             await useBookmarkStore.getState().applyRemoteSettings(applied)
           }
-        })()
+        })().catch((err) => toast.error('同步失败，本地数据已保留', String(err)))
       }
-      // bookmarks manifest 变更 → 触发整包重拉
-      // 只看 manifest 即可：所有 chunk + manifest 是同 set 写入的原子提交
+      // 分片可能晚于 manifest 到达；任一变化都重新检查最新完整版本。
       const chManifest = changes[KEY_BM_MANIFEST]
-      if (chManifest) {
+      if (chManifest || Object.keys(changes).some((key) => key.startsWith(KEY_BM_CHUNK_PREFIX))) {
         void (async () => {
-          const manifest = (chManifest.newValue ?? null) as BookmarksManifest | null
-          const { payload } = await handleBookmarksRemoteChange(manifest)
-          if (payload) {
-            await useBookmarkStore.getState().applyRemoteBookmarks(payload)
+          const latest = await browser.storage.sync.get(KEY_BM_MANIFEST)
+          const manifest = (latest[KEY_BM_MANIFEST] ?? null) as BookmarksManifest | null
+          const { payload, ts } = await handleBookmarksRemoteChange(manifest)
+          if (payload && ts !== undefined) {
+            await useBookmarkStore.getState().applyRemoteBookmarks(payload, ts)
           }
-        })()
+        })().catch((err) => toast.error('同步失败，本地数据已保留', String(err)))
       }
     }
     storageApi.onChanged.addListener(listener as never)
@@ -317,9 +321,7 @@ export default function App() {
     onDragLeave: onLinkDragLeave,
     onDrop: onLinkDrop,
   } = useExternalLinkDrop()
-  const dropHoverCat = dropHoverCatId
-    ? categories.find((c) => c.id === dropHoverCatId)
-    : null
+  const dropHoverCat = dropHoverCatId ? categories.find((c) => c.id === dropHoverCatId) : null
 
   return (
     <div className="h-full w-full flex flex-col">
@@ -395,7 +397,7 @@ export default function App() {
           )}
           {!initialized ? (
             <div className="text-center py-20 text-slate-400">加载中…</div>
-          ) : topLevelCount === 0 ? (
+          ) : topLevelCount === 0 && !collectionView ? (
             <EmptyState
               loading={loading}
               onImport={async () => {
@@ -406,15 +408,9 @@ export default function App() {
                   if (total === 0) {
                     toast.info('未发现书签', '当前浏览器中没有可以导入的书签')
                   } else if (r.categoriesAdded === 0 && r.cardsAdded === 0) {
-                    toast.info(
-                      '没有新增内容',
-                      `检测到 ${r.cardsSkipped} 个书签均已存在`,
-                    )
+                    toast.info('没有新增内容', `检测到 ${r.cardsSkipped} 个书签均已存在`)
                   } else {
-                    const dedup =
-                      r.cardsSkipped > 0
-                        ? `\n（已跳过重复 ${r.cardsSkipped} 个）`
-                        : ''
+                    const dedup = r.cardsSkipped > 0 ? `\n（已跳过重复 ${r.cardsSkipped} 个）` : ''
                     toast.success(
                       '已从浏览器导入',
                       `新增 ${r.categoriesAdded} 分类、${r.cardsAdded} 书签${dedup}`,
@@ -424,21 +420,17 @@ export default function App() {
                   console.error(err)
                   toast.error(
                     '从浏览器导入失败',
-                    err instanceof Error
-                      ? err.message
-                      : '未知错误（请确认已授权 bookmarks 权限）',
+                    err instanceof Error ? err.message : '未知错误（请确认已授权 bookmarks 权限）',
                   )
                 }
               }}
               onCreate={() => addCategory('我的收藏', '⭐')}
             />
-          ) : !activeCategoryId ? (
-            <div className="text-center py-20 text-slate-400">
-              ← 从左侧选择一个分类
-            </div>
+          ) : !activeCategoryId && !collectionView ? (
+            <div className="text-center py-20 text-slate-400">← 从左侧选择一个分类</div>
           ) : (
             <>
-              <Breadcrumb />
+              {!collectionView && <Breadcrumb />}
               <BookmarkGrid />
             </>
           )}
@@ -466,7 +458,10 @@ function EmptyState({
         <button onClick={onImport} disabled={loading} className="btn-primary py-3">
           {loading ? '导入中…' : '从浏览器一键导入书签'}
         </button>
-        <button onClick={onCreate} className="btn-ghost py-3 border border-slate-200 dark:border-slate-700">
+        <button
+          onClick={onCreate}
+          className="btn-ghost py-3 border border-slate-200 dark:border-slate-700"
+        >
           创建空白分类
         </button>
       </div>

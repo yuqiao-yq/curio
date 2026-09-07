@@ -1,9 +1,8 @@
 import { browser } from 'wxt/browser'
-import type {
-  BookmarkCard,
-  Category,
-  UserSettings,
-} from '../types/bookmark'
+import { withStorageLock } from './storageLock'
+import { acknowledgeBookmarkSync, PendingBookmarkChangesError } from './bookmarkSyncState'
+import { getRepository } from '../repositories'
+import type { BookmarkCard, Category, UserSettings } from '../types/bookmark'
 
 /* ─────────────────────────────────────────────────────────────
  * V1.5：跨设备同步（chrome.storage.sync）
@@ -22,14 +21,13 @@ import type {
  *   - 整包 LWW（按用户选型）：书签 payload 整体序列化 / 整体覆盖
  *   - 分块：序列化字符串按 CHUNK_BYTES 切片，写入 KEY_BM_CHUNK(i)，
  *     再加一个 KEY_BM_MANIFEST 记录 ts + chunkCount + totalBytes
- *   - 原子写：所有 chunk + manifest 用一次 storage.sync.set 提交，
- *     避免读到半截状态；onChanged 也是单次事件
+ *   - 所有 chunk + manifest 用一次 storage.sync.set 提交；远端可能分批到达，
+ *     读取完整版本并验证校验值后再应用
  *   - 超限保护：写之前先估算字节数，超 100KB 直接拒绝并清晰报错
  *   - 自回声防抖：每条管线各自的 lastPushTs/lastPullTs 守门
  *
- * 冲突：整包 LWW（"后写的覆盖先写的"）。两台设备同时改 →
- * 后写者的整个 categories+cards 替换先写者的整个集合，
- * 先写者那一端原本未推送的本地改动会丢失。在 UI 中说清楚。
+ * 仍按整包传输；本地待同步且已看到远端新版本时暂停自动覆盖。
+ * 跨设备没有共享锁，远端可延迟到达；此保护不等于逐条冲突合并。
  * ───────────────────────────────────────────────────────────── */
 
 // ─── 常量 ─────────────────────────────────────────────────
@@ -98,6 +96,8 @@ export interface BookmarksManifest {
   chunkCount: number
   /** 序列化后字节数；用于 UI 显示容量占比 */
   totalBytes: number
+  /** 检测分块到达顺序导致的混合版本；兼容未带校验值的旧客户端。 */
+  checksum?: string
 }
 
 export interface BookmarksPayload {
@@ -154,17 +154,19 @@ type MetaPatch = Partial<Omit<SyncMeta, 'settings' | 'bookmarks'>> & {
 }
 
 export async function setMeta(patch: MetaPatch): Promise<SyncMeta> {
-  const prev = await getMeta()
-  const next: SyncMeta = {
-    ...prev,
-    ...('enabled' in patch ? { enabled: patch.enabled ?? prev.enabled } : {}),
-    settings: { ...prev.settings, ...(patch.settings ?? {}) },
-    bookmarks: { ...prev.bookmarks, ...(patch.bookmarks ?? {}) },
-  }
-  if (patch.clearError) delete next.lastError
-  else if (patch.lastError !== undefined) next.lastError = patch.lastError
-  await browser.storage.local.set({ [KEY_LOCAL_META]: next })
-  return next
+  return withStorageLock('sync-meta', async () => {
+    const prev = await getMeta()
+    const next: SyncMeta = {
+      ...prev,
+      ...('enabled' in patch ? { enabled: patch.enabled ?? prev.enabled } : {}),
+      settings: { ...prev.settings, ...(patch.settings ?? {}) },
+      bookmarks: { ...prev.bookmarks, ...(patch.bookmarks ?? {}) },
+    }
+    if (patch.clearError) delete next.lastError
+    else if (patch.lastError !== undefined) next.lastError = patch.lastError
+    await browser.storage.local.set({ [KEY_LOCAL_META]: next })
+    return next
+  })
 }
 
 // ─── 通用 ─────────────────────────────────────────────────
@@ -215,9 +217,7 @@ async function readSettingsRemote(): Promise<SettingsPayload | null> {
   return raw
 }
 
-function sanitizeSettings(
-  raw: Partial<SyncableSettings> | undefined,
-): Partial<SyncableSettings> {
+function sanitizeSettings(raw: Partial<SyncableSettings> | undefined): Partial<SyncableSettings> {
   if (!raw || typeof raw !== 'object') return {}
   const out: Partial<SyncableSettings> = {}
   for (const k of SYNCABLE_SETTINGS_KEYS) {
@@ -247,23 +247,29 @@ export async function pushSettings(current: UserSettings): Promise<{
   ts?: number
   error?: string
 }> {
-  const m = await getMeta()
-  if (!m.enabled || !hasSyncStorage()) return { ok: false, error: 'sync 未启用' }
-  try {
-    const ts = Date.now()
-    const payload: SettingsPayload = {
-      version: PAYLOAD_VERSION,
-      ts,
-      settings: pickSyncable(current),
+  return withStorageLock('sync-bookmarks', async () => {
+    const m = await getMeta()
+    if (!m.enabled || !hasSyncStorage()) return { ok: false, error: 'sync 未启用' }
+    try {
+      const ts = Math.max(
+        Date.now(),
+        (m.settings.lastPushTs ?? 0) + 1,
+        (m.settings.lastPullTs ?? 0) + 1,
+      )
+      const payload: SettingsPayload = {
+        version: PAYLOAD_VERSION,
+        ts,
+        settings: pickSyncable(current),
+      }
+      await browser.storage.sync.set({ [KEY_SETTINGS_PAYLOAD]: payload })
+      await setMeta({ settings: { lastPushTs: ts }, clearError: true })
+      return { ok: true, ts }
+    } catch (err) {
+      const error = errMsg(err)
+      await setMeta({ lastError: `偏好推送失败：${error}` })
+      return { ok: false, error }
     }
-    await browser.storage.sync.set({ [KEY_SETTINGS_PAYLOAD]: payload })
-    await setMeta({ settings: { lastPushTs: ts }, clearError: true })
-    return { ok: true, ts }
-  } catch (err) {
-    const error = errMsg(err)
-    await setMeta({ lastError: `偏好推送失败：${error}` })
-    return { ok: false, error }
-  }
+  })
 }
 
 export async function pullSettingsForce(): Promise<{
@@ -292,39 +298,53 @@ export async function pullSettingsForce(): Promise<{
 export async function handleSettingsRemoteChange(
   payload: SettingsPayload | null,
 ): Promise<{ applied?: Partial<SyncableSettings>; ts?: number }> {
-  if (!payload) return {}
-  const m = await getMeta()
-  if (!m.enabled) return {}
-  if (m.settings.lastPushTs && payload.ts <= m.settings.lastPushTs) return {}
-  if (m.settings.lastPullTs && payload.ts <= m.settings.lastPullTs) return {}
-  await setMeta({ settings: { lastPullTs: payload.ts }, clearError: true })
-  return { applied: sanitizeSettings(payload.settings), ts: payload.ts }
+  return withStorageLock('sync-bookmarks', async () => {
+    if (!payload) return {}
+    const m = await getMeta()
+    if (!m.enabled) return {}
+    if (m.settings.lastPushTs && payload.ts <= m.settings.lastPushTs) return {}
+    if (m.settings.lastPullTs && payload.ts <= m.settings.lastPullTs) return {}
+    await setMeta({ settings: { lastPullTs: payload.ts }, clearError: true })
+    return { applied: sanitizeSettings(payload.settings), ts: payload.ts }
+  })
 }
 
 // ============================================================
 // 书签同步（categories + cards）
 // ============================================================
 
-/**
- * 把对象序列化并按字节切片。
- * 这里直接对 JSON 字符串按字符切（UTF-8 安全考虑：CHUNK_BYTES 留了大缓冲，
- * 实际字符串字符数远小于字节配额，4 字节字符仍能稳定容纳）。
- */
-function chunkString(s: string): string[] {
-  if (s.length <= CHUNK_BYTES) return [s]
-  const out: string[] = []
-  for (let i = 0; i < s.length; i += CHUNK_BYTES) {
-    out.push(s.slice(i, i + CHUNK_BYTES))
-  }
-  return out
+function payloadChecksum(text: string): string {
+  let hash = 2166136261
+  for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 16777619)
+  return (hash >>> 0).toString(16)
 }
 
-/** 估算 chrome.storage.sync 中 key+value 的近似字节占用（用于配额前置检查） */
+const encoder = new TextEncoder()
+function utf8Bytes(text: string): number {
+  return encoder.encode(text).byteLength
+}
+
+/** 按 JSON 二次编码后的字节分块；for...of 不切断 emoji 代理对。 */
+function chunkString(s: string): string[] {
+  const chunks: string[] = []
+  let chunk = ''
+  let bytes = 2 // 字符串外围引号
+  for (const char of s) {
+    const size = utf8Bytes(JSON.stringify(char)) - 2
+    if (bytes + size > CHUNK_BYTES && chunk) {
+      chunks.push(chunk)
+      chunk = ''
+      bytes = 2
+    }
+    chunk += char
+    bytes += size
+  }
+  if (chunk || !chunks.length) chunks.push(chunk)
+  return chunks
+}
+
 function estimateItemBytes(key: string, value: unknown): number {
-  // storage.sync 计算字节按 JSON.stringify(value).length + key.length
-  // 这是 chromium 实现的近似；够用于客户端预检
-  const v = JSON.stringify(value)
-  return key.length + (v?.length ?? 0)
+  return utf8Bytes(key) + utf8Bytes(JSON.stringify(value) ?? '')
 }
 
 export interface PushBookmarksResult {
@@ -335,14 +355,23 @@ export interface PushBookmarksResult {
   error?: string
   /** 超过配额时的提示文本（UI 直接展示） */
   quotaHint?: string
+  conflict?: boolean
 }
 
 /**
- * 把整套 categories + cards 整包 LWW 推送到云端。
+ * 底层整包写入接口，不确认本地待同步状态。UI 和自动调度使用 pushLocalBookmarks。
  * - 自动分块；超过 100KB 总配额直接拒绝
- * - 用一次 storage.sync.set 原子提交所有 chunk + manifest
+ * - 用一次 storage.sync.set 提交所有 chunk + manifest；远端可能分批到达
  */
 export async function pushBookmarks(
+  categories: Category[],
+  cards: BookmarkCard[],
+): Promise<PushBookmarksResult> {
+  return withStorageLock('sync-bookmarks', () => writeBookmarks(categories, cards))
+}
+
+/** 调用方必须持有 sync-bookmarks 锁。 */
+async function writeBookmarks(
   categories: Category[],
   cards: BookmarkCard[],
 ): Promise<PushBookmarksResult> {
@@ -351,13 +380,16 @@ export async function pushBookmarks(
     return { ok: false, error: 'sync 未启用' }
   }
 
-  const ts = Date.now()
+  const ts = Math.max(
+    Date.now(),
+    (m.bookmarks.lastPushTs ?? 0) + 1,
+    (m.bookmarks.lastPullTs ?? 0) + 1,
+  )
   const payload: BookmarksPayload = { categories, cards }
   const serialized = JSON.stringify(payload)
-  const totalBytes = serialized.length
+  const totalBytes = utf8Bytes(serialized)
 
-  // 配额预检：总字节超 100KB 直接报错；不要等 chrome 抛出 QUOTA_BYTES，
-  // 那样会写一半失败一半留下脏 chunk
+  // 配额预检：总字节超 100KB 直接报错，提供可读的容量说明。
   if (totalBytes > QUOTA_BYTES_TOTAL) {
     const overKb = ((totalBytes - QUOTA_BYTES_TOTAL) / 1024).toFixed(1)
     const quotaHint =
@@ -379,6 +411,7 @@ export async function pushBookmarks(
     ts,
     chunkCount: chunks.length,
     totalBytes,
+    checksum: payloadChecksum(serialized),
   }
 
   // 构造一次性 set 的对象：manifest + chunks
@@ -399,6 +432,18 @@ export async function pushBookmarks(
   }
 
   try {
+    const existing = await browser.storage.sync.get(null)
+    const projected = { ...existing, ...writeObj }
+    const storedBytes = Object.entries(projected).reduce(
+      (n, [k, v]) => n + estimateItemBytes(k, v),
+      0,
+    )
+    if (storedBytes > 102400) {
+      const quotaHint =
+        '写入后的同步数据（含偏好、分块和旧版本）超过 100KB，请先导出备份并精简数据。'
+      await setMeta({ lastError: quotaHint })
+      return { ok: false, error: '超出云端配额', quotaHint, bytes: storedBytes }
+    }
     await browser.storage.sync.set(writeObj)
     // 清理上一次留下、本次用不到的 chunk（避免历史 chunk 残留浪费配额）
     await pruneStaleChunks(chunks.length)
@@ -412,6 +457,71 @@ export async function pushBookmarks(
     await setMeta({ lastError: `书签推送失败：${error}` })
     return { ok: false, error, bytes: totalBytes }
   }
+}
+
+/** 自动推送使用持久化版本；手动推送才可显式选择覆盖冲突。 */
+export async function pushLocalBookmarks(
+  options: { force?: boolean; shouldContinue?: () => boolean } = {},
+): Promise<PushBookmarksResult> {
+  return withStorageLock('sync-bookmarks', async () => {
+    try {
+      const meta = await getMeta()
+      if (!meta.enabled || !hasSyncStorage()) return { ok: false, error: 'sync 未启用' }
+      const snapshot = await getRepository().getSyncSnapshot()
+      const remote = options.force ? null : await readBookmarksRemote()
+      if (options.shouldContinue && !options.shouldContinue())
+        return { ok: false, error: '已取消同步' }
+      if (!options.force) {
+        if (!snapshot.state?.pending && remote) return { ok: true }
+        const knownTs = Math.max(meta.bookmarks.lastPushTs ?? 0, meta.bookmarks.lastPullTs ?? 0)
+        if (snapshot.state?.pending && remote && remote.manifest.ts > knownTs) {
+          throw new PendingBookmarkChangesError()
+        }
+      }
+      const result = await writeBookmarks(snapshot.data.categories, snapshot.data.cards)
+      if (result.ok) await acknowledgeBookmarkSync(snapshot.state?.revision)
+      return result
+    } catch (err) {
+      const error = errMsg(err)
+      await setMeta({ lastError: error })
+      return { ok: false, error, conflict: err instanceof PendingBookmarkChangesError }
+    }
+  })
+}
+
+/** 落盘后才确认接收版本；与本机推送共用锁，避免本机写入事件被当作远端更新。 */
+export async function commitReceivedBookmarks(
+  payload: BookmarksPayload,
+  ts: number,
+  force = false,
+): Promise<boolean> {
+  return withStorageLock('sync-bookmarks', async () => {
+    const meta = await getMeta()
+    if (
+      !force &&
+      (!meta.enabled ||
+        ts <= Math.max(meta.bookmarks.lastPushTs ?? 0, meta.bookmarks.lastPullTs ?? 0))
+    )
+      return false
+    try {
+      await getRepository().bulkImport(
+        { version: 'sync', exportedAt: Date.now(), ...payload },
+        'replace',
+        { fromSync: true, discardPending: force },
+      )
+      await setMeta({
+        bookmarks: {
+          lastPullTs: ts,
+          lastSizeBytes: estimateBookmarksBytes(payload.categories, payload.cards),
+        },
+        clearError: true,
+      })
+      return true
+    } catch (err) {
+      await setMeta({ lastError: errMsg(err) })
+      throw err
+    }
+  })
 }
 
 /**
@@ -439,31 +549,39 @@ export async function readBookmarksRemote(): Promise<{
   payload: BookmarksPayload
 } | null> {
   if (!hasSyncStorage()) return null
-  const mfRes = await browser.storage.sync.get(KEY_BM_MANIFEST)
+  const mfRes = await browser.storage.sync.get(null)
   const manifest = mfRes[KEY_BM_MANIFEST] as BookmarksManifest | undefined
-  if (!manifest || typeof manifest.ts !== 'number' || !Number.isFinite(manifest.chunkCount)) {
-    return null
+  if (!manifest) return null
+  if (
+    typeof manifest.ts !== 'number' ||
+    !Number.isInteger(manifest.chunkCount) ||
+    manifest.chunkCount < 1 ||
+    manifest.chunkCount > MAX_CHUNKS
+  ) {
+    throw new Error('云端书签版本信息无效，已保留本地数据')
   }
   const keys = Array.from({ length: manifest.chunkCount }, (_, i) => keyBmChunk(i))
   if (keys.length === 0) return null
-  const chunksRes = (await browser.storage.sync.get(keys)) as Record<string, string | undefined>
+  const chunksRes = mfRes as Record<string, string | undefined>
   let concat = ''
   for (let i = 0; i < manifest.chunkCount; i++) {
     const c = chunksRes[keyBmChunk(i)]
     if (typeof c !== 'string') {
-      // 缺块：拒绝拼装，宁可视为"无云端数据"
-      return null
+      throw new Error('云端书签尚未完整到达，请稍后重试；本地数据已保留')
     }
     concat += c
   }
   try {
+    if (manifest.checksum && manifest.checksum !== payloadChecksum(concat)) {
+      throw new Error('云端分块版本不一致')
+    }
     const payload = JSON.parse(concat) as BookmarksPayload
     if (!Array.isArray(payload.categories) || !Array.isArray(payload.cards)) {
-      return null
+      throw new Error('云端书签格式无效')
     }
     return { manifest, payload }
   } catch {
-    return null
+    throw new Error('云端书签格式无效，已保留本地数据')
   }
 }
 
@@ -479,10 +597,6 @@ export async function pullBookmarksForce(): Promise<PullBookmarksResult> {
   try {
     const r = await readBookmarksRemote()
     if (!r) return {}
-    await setMeta({
-      bookmarks: { lastPullTs: r.manifest.ts, lastSizeBytes: r.manifest.totalBytes },
-      clearError: true,
-    })
     return { payload: r.payload, ts: r.manifest.ts, bytes: r.manifest.totalBytes }
   } catch (err) {
     const error = errMsg(err)
@@ -492,26 +606,22 @@ export async function pullBookmarksForce(): Promise<PullBookmarksResult> {
 }
 
 /**
- * onChanged 触发时（书签 manifest 变更）处理远端到本机。
- * 注意 chunk 的变化我们不直接看，只看 manifest.ts —— 因为 manifest
- * 是 push 时同 set 写的，可以代表整次写入的『提交点』。
+ * manifest 或 chunk 变化后，由调用方传入最新 manifest。
+ * 重新读取完整 payload 并验证校验值，避免应用尚未到齐的分片。
  */
 export async function handleBookmarksRemoteChange(
   manifest: BookmarksManifest | null,
 ): Promise<{ payload?: BookmarksPayload; ts?: number }> {
-  if (!manifest || typeof manifest.ts !== 'number') return {}
-  const m = await getMeta()
-  if (!m.enabled) return {}
-  if (m.bookmarks.lastPushTs && manifest.ts <= m.bookmarks.lastPushTs) return {}
-  if (m.bookmarks.lastPullTs && manifest.ts <= m.bookmarks.lastPullTs) return {}
-  // manifest 变了，但本地状态滞后 → 重新读全量
-  const r = await readBookmarksRemote()
-  if (!r) return {}
-  await setMeta({
-    bookmarks: { lastPullTs: r.manifest.ts, lastSizeBytes: r.manifest.totalBytes },
-    clearError: true,
+  return withStorageLock('sync-bookmarks', async () => {
+    if (!manifest || typeof manifest.ts !== 'number') return {}
+    const m = await getMeta()
+    if (!m.enabled) return {}
+    const knownTs = Math.max(m.bookmarks.lastPushTs ?? 0, m.bookmarks.lastPullTs ?? 0)
+    if (manifest.ts <= knownTs) return {}
+    const r = await readBookmarksRemote()
+    if (!r || r.manifest.ts <= knownTs) return {}
+    return { payload: r.payload, ts: r.manifest.ts }
   })
-  return { payload: r.payload, ts: r.manifest.ts }
 }
 
 // ============================================================
@@ -519,8 +629,8 @@ export async function handleBookmarksRemoteChange(
 // ============================================================
 
 /**
- * 启用同步：把本机当前 settings + bookmarks 都作为初始 payload 推到云端。
- * - 任一步失败都视为启用失败，meta.enabled 仍设为 false
+ * 启用同步：先合并已有远端书签，再推送本机偏好和合并后的书签。
+ * - 偏好推送失败关闭同步；书签推送失败保留开关并提示错误，供后续重试
  * - 在 chrome.storage.sync 不可用时直接报错
  */
 export async function enableSync(
@@ -534,6 +644,27 @@ export async function enableSync(
     return { ok: false, error }
   }
 
+  // 首次启用先读取已有远端并合并；空本地不能覆盖其它设备的书签。
+  try {
+    const repo = getRepository()
+    await repo.bulkImport(
+      { version: 'sync-enable', exportedAt: Date.now(), categories, cards },
+      'merge',
+    )
+    const remote = await readBookmarksRemote()
+    if (remote) {
+      await repo.bulkImport(
+        { version: 'sync-enable', exportedAt: Date.now(), ...remote.payload },
+        'merge',
+      )
+      await setMeta({ bookmarks: { lastPullTs: remote.manifest.ts } })
+    }
+  } catch (err) {
+    const error = `无法安全开启同步：${errMsg(err)}`
+    await setMeta({ lastError: error })
+    return { ok: false, error }
+  }
+
   // 先把 enabled 打开，pushSettings/pushBookmarks 内部会检查 enabled
   await setMeta({ enabled: true, clearError: true })
 
@@ -543,7 +674,7 @@ export async function enableSync(
     return { ok: false, error: ps.error }
   }
 
-  const pb = await pushBookmarks(categories, cards)
+  const pb = await pushLocalBookmarks()
   if (!pb.ok) {
     // 偏好已推但书签超限 → 仍维持启用，让用户看到错误并自行清理；
     // 不要回滚 enabled，否则书签同步功能完全用不了
@@ -554,38 +685,41 @@ export async function enableSync(
 }
 
 export async function disableSync(): Promise<void> {
-  await setMeta({ enabled: false, clearError: true })
+  await withStorageLock('sync-bookmarks', () => setMeta({ enabled: false, clearError: true }))
 }
 
 /**
  * 清空云端所有同步数据（settings payload + bookmarks chunks + manifest）。
- * 本地状态不变；其它设备会收到 onChanged 并清空（这里直接 wipe 不通知，
- * 因为 onChanged 在 null payload 上我们自身就返回 {}，对方应用层不会动）。
+ * 不删除本地或其它设备的书签；删除通知不应用为空库。
  */
 export async function wipeRemote(): Promise<void> {
-  if (!hasSyncStorage()) return
-  try {
-    const all = (await browser.storage.sync.get(null)) as Record<string, unknown>
-    const keys: string[] = []
-    for (const k of Object.keys(all)) {
-      if (k === KEY_SETTINGS_PAYLOAD) keys.push(k)
-      else if (k === KEY_BM_MANIFEST) keys.push(k)
-      else if (k.startsWith(KEY_BM_CHUNK_PREFIX)) keys.push(k)
+  await withStorageLock('sync-bookmarks', async () => {
+    if (!hasSyncStorage()) return
+    try {
+      const all = (await browser.storage.sync.get(null)) as Record<string, unknown>
+      const keys: string[] = []
+      for (const k of Object.keys(all)) {
+        if (k === KEY_SETTINGS_PAYLOAD) keys.push(k)
+        else if (k === KEY_BM_MANIFEST) keys.push(k)
+        else if (k.startsWith(KEY_BM_CHUNK_PREFIX)) keys.push(k)
+      }
+      if (keys.length > 0) await browser.storage.sync.remove(keys)
+      await setMeta({
+        settings: { lastPushTs: undefined, lastPullTs: undefined },
+        bookmarks: { lastPushTs: undefined, lastPullTs: undefined, lastSizeBytes: undefined },
+        clearError: true,
+      })
+    } catch (err) {
+      await setMeta({ lastError: `清空云端失败：${errMsg(err)}` })
+      throw err
     }
-    if (keys.length > 0) await browser.storage.sync.remove(keys)
-    await setMeta({
-      settings: { lastPushTs: undefined, lastPullTs: undefined },
-      bookmarks: { lastPushTs: undefined, lastPullTs: undefined, lastSizeBytes: undefined },
-      clearError: true,
-    })
-  } catch {
-    /* 失败容忍，UI 会显示 lastError */
-  }
+  })
 }
 
 export interface BootstrapResult {
   appliedSettings?: Partial<SyncableSettings>
   appliedBookmarks?: BookmarksPayload
+  bookmarksTs?: number
   /** 引导期错误（不致命；caller 可 toast 提示） */
   warnings?: string[]
 }
@@ -596,11 +730,7 @@ export interface BootstrapResult {
  * 偏好：远端新 → 应用；远端无 → 推本机；本地新 → 推本机
  * 书签：远端新 → 应用整包；远端无 → 推本机整包；本地新 → 推本机
  */
-export async function bootstrapSync(
-  current: UserSettings,
-  categories: Category[],
-  cards: BookmarkCard[],
-): Promise<BootstrapResult> {
+export async function bootstrapSync(current: UserSettings): Promise<BootstrapResult> {
   const m = await getMeta()
   if (!m.enabled || !hasSyncStorage()) return {}
   const result: BootstrapResult = { warnings: [] }
@@ -626,26 +756,24 @@ export async function bootstrapSync(
   // ─── bookmarks ────────────────────────────
   try {
     const remoteBm = await readBookmarksRemote()
+    const snapshot = await getRepository().getSyncSnapshot()
     const localPush = m.bookmarks.lastPushTs ?? 0
-    if (!remoteBm) {
-      const r = await pushBookmarks(categories, cards)
-      if (!r.ok) result.warnings?.push(r.quotaHint ?? `书签推送失败：${r.error}`)
-    } else if (remoteBm.manifest.ts > localPush) {
-      await setMeta({
-        bookmarks: {
-          lastPullTs: remoteBm.manifest.ts,
-          lastSizeBytes: remoteBm.manifest.totalBytes,
-        },
-      })
+    const knownTs = Math.max(localPush, m.bookmarks.lastPullTs ?? 0)
+    if (snapshot.state?.pending || !remoteBm) {
+      const r = await pushLocalBookmarks()
+      if (!r.ok) result.warnings?.push(r.quotaHint ?? r.error ?? '书签推送失败')
+    } else if (remoteBm.manifest.ts > knownTs) {
       result.appliedBookmarks = remoteBm.payload
+      result.bookmarksTs = remoteBm.manifest.ts
     } else if (localPush > remoteBm.manifest.ts) {
-      const r = await pushBookmarks(categories, cards)
+      const r = await pushLocalBookmarks({ force: true })
       if (!r.ok) result.warnings?.push(r.quotaHint ?? `书签推送失败：${r.error}`)
     }
   } catch (err) {
     result.warnings?.push(`书签引导失败：${errMsg(err)}`)
   }
 
+  if (result.warnings?.length) await setMeta({ lastError: result.warnings.join('；') })
   return result
 }
 
@@ -654,11 +782,8 @@ export async function bootstrapSync(
 // ============================================================
 
 /** 当前书签 payload 字节数估算（同步前预览用） */
-export function estimateBookmarksBytes(
-  categories: Category[],
-  cards: BookmarkCard[],
-): number {
-  return JSON.stringify({ categories, cards }).length
+export function estimateBookmarksBytes(categories: Category[], cards: BookmarkCard[]): number {
+  return utf8Bytes(JSON.stringify({ categories, cards }))
 }
 
 export const SYNC_QUOTA = {

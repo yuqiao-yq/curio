@@ -6,9 +6,21 @@ import type {
   UserSettings,
 } from '../types/bookmark'
 import type { BrowserHistoryItem, RecentEntry } from '../types/recent'
+import type { BookmarkSyncState } from '../services/bookmarkSyncState'
 
 /** 批量导入模式 */
 export type BulkImportMode = 'merge' | 'replace'
+
+export interface ImportOptions {
+  fromSync?: boolean
+  /** 用户明确选择以远端覆盖本地时才允许丢弃待同步版本。 */
+  discardPending?: boolean
+}
+
+export interface BookmarkSyncSnapshot {
+  data: ExportData
+  state?: BookmarkSyncState
+}
 
 /** 批量导入结果统计 */
 export interface BulkImportResult {
@@ -53,7 +65,12 @@ export interface BookmarkRepository {
    * - mode='merge'（默认，安全）：与本地数据合并，同 ID 取 updatedAt 更新者，新 ID 追加并重排 order；不覆盖本地 settings
    * - mode='replace'：完全替换本地数据（含 settings），慎用
    */
-  bulkImport(data: ExportData, mode?: BulkImportMode): Promise<BulkImportResult>
+  bulkImport(
+    data: ExportData,
+    mode?: BulkImportMode,
+    options?: ImportOptions,
+  ): Promise<BulkImportResult>
+  getSyncSnapshot(): Promise<BookmarkSyncSnapshot>
   bulkExport(): Promise<ExportData>
   clear(): Promise<void>
 

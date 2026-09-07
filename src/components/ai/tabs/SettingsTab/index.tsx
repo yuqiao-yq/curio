@@ -66,9 +66,15 @@ export function SettingsTab() {
           />
           <ToggleRow
             label="匿名模式"
-            description="发送给 AI 时只发域名，不发完整 URL"
+            description="AI 自动整理时只发送域名；对话中你主动输入的内容仍会发送"
             checked={settings.privacy.anonymousMode}
             onChange={(v) => settings.patchPrivacy({ anonymousMode: v })}
+          />
+          <ToggleRow
+            label="允许 AI 使用已抓取正文"
+            description="开启后，正文片段可发送给你配置的对话、摘要和向量模型。关闭时仅使用书签标题、标签和备注；已发送的数据无法撤回。"
+            checked={settings.privacy.sendPageContent === true}
+            onChange={(v) => settings.patchPrivacy({ sendPageContent: v })}
           />
           <ToggleRow
             label="操作前显示成本估算"
@@ -122,10 +128,7 @@ export function SettingsTab() {
             + 添加 Provider
           </button>
         ) : (
-          <AddProviderForm
-            onClose={() => setAdding(false)}
-            onAdded={() => setAdding(false)}
-          />
+          <AddProviderForm onClose={() => setAdding(false)} onAdded={() => setAdding(false)} />
         )}
       </section>
 
@@ -159,8 +162,8 @@ export function SettingsTab() {
       <QualitySection />
 
       <p className="text-[11px] text-slate-400 leading-relaxed">
-        🔒 你的 API Key 仅保存在本机 chrome.storage.local，永不上传，
-        也不会出现在导出的 JSON 数据里。
+        🔒 你的 API Key 仅保存在本机 chrome.storage.local，永不上传， 也不会出现在导出的 JSON
+        数据里。
       </p>
     </div>
   )

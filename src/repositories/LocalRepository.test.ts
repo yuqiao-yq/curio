@@ -8,12 +8,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import { LocalRepository } from './LocalRepository'
-import type {
-  BookmarkCard,
-  Category,
-  ExportData,
-  UserSettings,
-} from '../types/bookmark'
+import type { BookmarkCard, Category, ExportData, UserSettings } from '../types/bookmark'
 import { DEFAULT_SETTINGS } from '../types/bookmark'
 
 // ─── helpers ──────────────────────────────────────────
@@ -335,9 +330,7 @@ describe('LocalRepository: export ↔ import 圆环', () => {
   it('JSON.stringify ↔ JSON.parse 不丢失数据（备份场景）', async () => {
     const repo = new LocalRepository()
     await repo.saveCategories([mkCat({ id: 'a', description: '含中文 / "引号" / \\反斜杠' })])
-    await repo.saveCards([
-      mkCard({ id: 'c1', tags: ['#日常', '🎯 目标', ''] }),
-    ])
+    await repo.saveCards([mkCard({ id: 'c1', tags: ['#日常', '🎯 目标', ''] })])
     const data = await repo.bulkExport()
     const restored = JSON.parse(JSON.stringify(data)) as ExportData
 
@@ -441,4 +434,42 @@ describe('LocalRepository: 样式预设', () => {
     const list = await repo.getPresets()
     expect(list.every((p) => p.kind === 'builtin')).toBe(true)
   })
+})
+
+describe('并发写入与备份', () => {
+  it('多个仓库实例并发添加书签不会覆盖彼此', async () => {
+    const a = new LocalRepository()
+    const b = new LocalRepository()
+    await Promise.all(
+      Array.from({ length: 20 }, (_, i) => (i % 2 ? a : b).saveCard(mkCard({ id: String(i) }))),
+    )
+    expect(await a.getCards()).toHaveLength(20)
+  })
+  it('删除前的备份可以完整恢复', async () => {
+    const { listBackups } = await import('./BackupsDB')
+    const repo = new LocalRepository()
+    await repo.saveCategory(mkCat())
+    await repo.saveCard(mkCard({ id: 'restore-me' }))
+    await repo.deleteCard('restore-me')
+    expect(await repo.getCards()).toHaveLength(0)
+    const snapshots = await listBackups()
+    const snapshot = snapshots.find(
+      (b) => b.reason === '删除书签' && b.data.cards.some((c) => c.id === 'restore-me'),
+    )!
+    expect(snapshot).toBeTruthy()
+    await repo.bulkImport(snapshot.data, 'replace')
+    expect((await repo.getCards())[0].id).toBe('restore-me')
+  })
+})
+
+it('并发收藏到收件箱只创建一个分类并保留所有书签', async () => {
+  const { INBOX_ID } = await import('../utils/collections')
+  const a = new LocalRepository()
+  const b = new LocalRepository()
+  await Promise.all([
+    a.saveCard(mkCard({ id: 'one', categoryId: INBOX_ID })),
+    b.saveCard(mkCard({ id: 'two', categoryId: INBOX_ID })),
+  ])
+  expect((await a.getCategories()).filter((c) => c.id === INBOX_ID)).toHaveLength(1)
+  expect(await a.getCards()).toHaveLength(2)
 })

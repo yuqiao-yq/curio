@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { browser } from 'wxt/browser'
 import { useBookmarkStore } from '../../src/stores/useBookmarkStore'
-import {
-  useAISettingsStore,
-  useIsAIConfigured,
-} from '../../src/ai/useAISettingsStore'
+import { useAISettingsStore, useIsAIConfigured } from '../../src/ai/useAISettingsStore'
 import { runSuggester } from '../../src/ai/services/suggester'
 import type { Category } from '../../src/types/bookmark'
 import { getHostname } from '../../src/utils/favicon'
@@ -12,6 +9,8 @@ import { cn } from '../../src/utils/cn'
 import { FaviconImg } from '../../src/components/FaviconImg'
 import { runLegacyMigrationOnce } from '../../src/services/legacyMigration'
 import { BookmarkTreeSection } from './BookmarkTreeSection'
+import { INBOX_ID } from '../../src/utils/collections'
+import { subscribeLocalChanges } from '../../src/services/localChanges'
 
 /**
  * 浏览器工具栏图标的 Popup。
@@ -30,6 +29,7 @@ import { BookmarkTreeSection } from './BookmarkTreeSection'
  *    写入后 newtab 不会自动刷新（V1 接受这个限制）
  */
 export default function Popup() {
+  useEffect(() => subscribeLocalChanges(), [])
   const init = useBookmarkStore((s) => s.init)
   const initialized = useBookmarkStore((s) => s.initialized)
   const categories = useBookmarkStore((s) => s.categories)
@@ -45,14 +45,12 @@ export default function Popup() {
   const aiAvailable = aiHydrated && aiConfigured
 
   // 当前 active tab 信息（用于「添加当前页面」）
-  const [tabInfo, setTabInfo] = useState<{ url: string; title: string } | null>(
-    null,
-  )
+  const [tabInfo, setTabInfo] = useState<{ url: string; title: string } | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
   const [draftDesc, setDraftDesc] = useState('')
   /** tags 用空格 / 逗号分隔的原始字符串保存草稿态；提交时再解析 */
   const [draftTagsRaw, setDraftTagsRaw] = useState('')
-  const [targetCategoryId, setTargetCategoryId] = useState<string>('')
+  const [targetCategoryId, setTargetCategoryId] = useState<string>(INBOX_ID)
 
   /**
    * dirty 跟踪：避免 AI 建议覆盖用户主动改过的字段。
@@ -88,8 +86,7 @@ export default function Popup() {
   // popup 没有完整的主题选择 UI，简单跟随 prefers-color-scheme
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    const apply = (isDark: boolean) =>
-      document.documentElement.classList.toggle('dark', isDark)
+    const apply = (isDark: boolean) => document.documentElement.classList.toggle('dark', isDark)
     apply(mq.matches)
     const onChange = (e: MediaQueryListEvent) => apply(e.matches)
     mq.addEventListener('change', onChange)
@@ -121,17 +118,12 @@ export default function Popup() {
     if (!initialized) return
     if (targetCategoryId) return
     const fallback =
-      activeCategoryId ??
-      categories.find((c) => !c.parentId)?.id ??
-      categories[0]?.id ??
-      ''
+      activeCategoryId ?? categories.find((c) => !c.parentId)?.id ?? categories[0]?.id ?? ''
     setTargetCategoryId(fallback)
   }, [initialized, activeCategoryId, categories, targetCategoryId])
 
   // 顶层 + 子级，按 order 排序，渲染时用前缀缩进表达层级
-  const flatCategories = useMemo(() => buildIndentedList(categories), [
-    categories,
-  ])
+  const flatCategories = useMemo(() => buildIndentedList(categories), [categories])
 
   /** 当前草稿 tags（解析后） */
   const parsedTags = useMemo(() => parseTagsInput(draftTagsRaw), [draftTagsRaw])
@@ -211,9 +203,7 @@ export default function Popup() {
       return
     }
     // 避免重复添加：同分类下 url 相同直接提示
-    const exists = cards.some(
-      (c) => c.categoryId === targetCategoryId && c.url === url,
-    )
+    const exists = cards.some((c) => c.categoryId === targetCategoryId && c.url === url)
     if (exists) {
       setSubmitState('duplicate')
       // 2 秒后回到 idle，避免一直堵在错误态
@@ -256,12 +246,8 @@ export default function Popup() {
     >
       {/* ───── Header ───── */}
       <header className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-200 dark:border-slate-700 whitespace-nowrap">
-        <span className="text-base font-semibold text-brand leading-none">
-          Curio
-        </span>
-        <span className="text-[10px] text-slate-400 leading-none truncate">
-          书签整理新标签页
-        </span>
+        <span className="text-base font-semibold text-brand leading-none">Curio</span>
+        <span className="text-[10px] text-slate-400 leading-none truncate">书签整理新标签页</span>
       </header>
 
       {/* ───── 主操作 ───── */}
@@ -446,7 +432,7 @@ export default function Popup() {
                   setTargetCategoryId(e.target.value)
                   dirty.current.category = true
                 }}
-                disabled={!initialized || flatCategories.length === 0}
+                disabled={!initialized}
                 className={cn(
                   'flex-1 px-2 py-1.5 text-sm rounded',
                   'bg-white dark:bg-slate-900',
@@ -455,17 +441,18 @@ export default function Popup() {
                   'disabled:opacity-60',
                 )}
               >
-                {flatCategories.length === 0 ? (
-                  <option value="">（暂无分类，请先到主页面新建）</option>
-                ) : (
-                  flatCategories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {'  '.repeat(c.depth)}
-                      {c.depth > 0 ? '└ ' : ''}
-                      {c.name}
-                    </option>
-                  ))
+                {!categories.some((c) => c.id === INBOX_ID) && (
+                  <option value={INBOX_ID}>收件箱（稍后整理）</option>
                 )}
+                {flatCategories.length === 0
+                  ? null
+                  : flatCategories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {'  '.repeat(c.depth)}
+                        {c.depth > 0 ? '└ ' : ''}
+                        {c.name}
+                      </option>
+                    ))}
               </select>
             </div>
 
@@ -480,9 +467,7 @@ export default function Popup() {
                   <button
                     type="button"
                     onClick={() => {
-                      const hit = categories.find(
-                        (c) => c.name === aiState.last?.categoryName,
-                      )
+                      const hit = categories.find((c) => c.name === aiState.last?.categoryName)
                       if (hit) setTargetCategoryId(hit.id)
                     }}
                     className="text-brand hover:underline"
@@ -594,11 +579,7 @@ function getProtocolLabel(url: string): string {
   return m ? m[1] : '内部'
 }
 
-function StatusHint({
-  state,
-}: {
-  state: 'idle' | 'saving' | 'saved' | 'duplicate' | 'invalid'
-}) {
+function StatusHint({ state }: { state: 'idle' | 'saving' | 'saved' | 'duplicate' | 'invalid' }) {
   if (state === 'duplicate') {
     return (
       <span className="flex-1 text-[11px] text-amber-600 dark:text-amber-400">
@@ -607,11 +588,7 @@ function StatusHint({
     )
   }
   if (state === 'invalid') {
-    return (
-      <span className="flex-1 text-[11px] text-red-500">
-        添加失败，请检查标题与 URL
-      </span>
-    )
+    return <span className="flex-1 text-[11px] text-red-500">添加失败，请检查标题与 URL</span>
   }
   return <span className="flex-1" />
 }

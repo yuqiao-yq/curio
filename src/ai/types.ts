@@ -40,6 +40,8 @@ export interface AIRouting {
 export interface AIPrivacy {
   anonymousMode: boolean
   allowContentCrawl: boolean
+  /** 主动允许把已抓取正文用于所选 AI 模型；默认关闭。 */
+  sendPageContent?: boolean
   showCostEstimate: boolean
 }
 
@@ -138,6 +140,7 @@ export const DEFAULT_AI_SETTINGS: AISettings = {
   privacy: {
     anonymousMode: true,
     allowContentCrawl: false,
+    sendPageContent: false,
     showCostEstimate: true,
   },
   preferLocal: false,
@@ -236,13 +239,13 @@ export interface PlanReview {
  * 整理执行的阶段。组件用此切换 UI。
  */
 export type OrganizeStage =
-  | 'config'    // 用户配置 range / style / 隐私
-  | 'estimate'  // 显示成本估算，等待用户确认
-  | 'running'   // AI 处理中（可取消）
-  | 'preview'   // 已得到 plan，diff 视图供用户挑选
-  | 'applying'  // 正在应用到 store / repository
-  | 'done'      // 应用完成，60s 撤销窗口
-  | 'error'     // 任意阶段出错的统一结束态
+  | 'config' // 用户配置 range / style / 隐私
+  | 'estimate' // 显示成本估算，等待用户确认
+  | 'running' // AI 处理中（可取消）
+  | 'preview' // 已得到 plan，diff 视图供用户挑选
+  | 'applying' // 正在应用到 store / repository
+  | 'done' // 应用完成，60s 撤销窗口
+  | 'error' // 任意阶段出错的统一结束态
 
 /** 范围对应的待处理书签数（在 config 阶段实时计算给用户看） */
 export interface RangeStat {
@@ -309,14 +312,7 @@ export interface TagPlanReview {
 }
 
 /** Tagger 任务状态（与 OrganizeStage 对称） */
-export type TagStage =
-  | 'config'
-  | 'estimate'
-  | 'running'
-  | 'preview'
-  | 'applying'
-  | 'done'
-  | 'error'
+export type TagStage = 'config' | 'estimate' | 'running' | 'preview' | 'applying' | 'done' | 'error'
 
 // ─── 浮窗 Tab 类型 ──────────────────────────────────────
 

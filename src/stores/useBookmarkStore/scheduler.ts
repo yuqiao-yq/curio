@@ -1,7 +1,8 @@
 import { getRepository } from '../../repositories'
+import { toast } from '../useToastStore'
 import {
   pushSettings as syncPushSettings,
-  pushBookmarks as syncPushBookmarks,
+  pushLocalBookmarks as syncPushBookmarks,
 } from '../../services/SyncService'
 import { useBookmarkStore } from '.'
 
@@ -31,7 +32,9 @@ export function scheduleSettingsSave() {
   if (settingsSaveTimer) clearTimeout(settingsSaveTimer)
   settingsSaveTimer = setTimeout(() => {
     settingsSaveTimer = null
-    void getRepository().saveSettings(useBookmarkStore.getState().settings)
+    void getRepository()
+      .saveSettings(useBookmarkStore.getState().settings)
+      .catch((err) => toast.error('设置保存失败', String(err)))
   }, SETTINGS_SAVE_DEBOUNCE_MS)
 }
 
@@ -39,7 +42,9 @@ function flushSettingsSave() {
   if (!settingsSaveTimer) return
   clearTimeout(settingsSaveTimer)
   settingsSaveTimer = null
-  void getRepository().saveSettings(useBookmarkStore.getState().settings)
+  void getRepository()
+    .saveSettings(useBookmarkStore.getState().settings)
+    .catch((err) => toast.error('设置保存失败', String(err)))
 }
 
 // ─── settings 同步推送 ─────────────────────────────────────
@@ -64,13 +69,47 @@ function flushSettingsSyncPush() {
 // ─── bookmarks 同步推送 ────────────────────────────────────
 let bookmarksSyncPushTimer: ReturnType<typeof setTimeout> | null = null
 const BOOKMARKS_SYNC_PUSH_DEBOUNCE_MS = 1500
+let bookmarksRetry = 0
+let bookmarksGeneration = 0
+
+async function pushLatestBookmarks(generation = bookmarksGeneration) {
+  try {
+    const result = await syncPushBookmarks({
+      shouldContinue: () => generation === bookmarksGeneration,
+    })
+    if (generation !== bookmarksGeneration) return
+    if (result.ok) {
+      bookmarksRetry = 0
+      return
+    }
+    if (
+      generation === bookmarksGeneration &&
+      !result.quotaHint &&
+      !result.conflict &&
+      result.error !== 'sync 未启用' &&
+      bookmarksRetry < 3
+    ) {
+      bookmarksRetry++
+      bookmarksSyncPushTimer = setTimeout(
+        () => {
+          bookmarksSyncPushTimer = null
+          void pushLatestBookmarks()
+        },
+        5000 * 2 ** (bookmarksRetry - 1),
+      )
+    }
+  } catch (err) {
+    toast.error('无法同步书签', err instanceof Error ? err.message : String(err))
+  }
+}
 
 export function scheduleBookmarksSyncPush() {
+  bookmarksRetry = 0
+  bookmarksGeneration++
   if (bookmarksSyncPushTimer) clearTimeout(bookmarksSyncPushTimer)
   bookmarksSyncPushTimer = setTimeout(() => {
     bookmarksSyncPushTimer = null
-    const s = useBookmarkStore.getState()
-    void syncPushBookmarks(s.categories, s.cards)
+    void pushLatestBookmarks()
   }, BOOKMARKS_SYNC_PUSH_DEBOUNCE_MS)
   // v0.22.x：同一汇聚点顺手调度浏览器书签自动镜像（仅当开关开启）。
   // 复用所有 slice 已存在的 21 处 scheduleBookmarksSyncPush 调用，
@@ -82,8 +121,7 @@ function flushBookmarksSyncPush() {
   if (!bookmarksSyncPushTimer) return
   clearTimeout(bookmarksSyncPushTimer)
   bookmarksSyncPushTimer = null
-  const s = useBookmarkStore.getState()
-  void syncPushBookmarks(s.categories, s.cards)
+  void pushLatestBookmarks()
 }
 
 // ─── 浏览器书签自动镜像（v0.22.x） ─────────────────────────
@@ -153,7 +191,14 @@ export function cancelPendingBrowserSyncExport() {
  * 在 readRemote 的 await 间隙里 push 触发，把刚改的本地值推上去，
  * 紧接着 pull 拿回来一看『云端 = 本地新值』，覆盖看起来没生效。
  */
+export function cancelPendingSettingsSave() {
+  if (settingsSaveTimer) clearTimeout(settingsSaveTimer)
+  settingsSaveTimer = null
+}
+
 export function cancelPendingSyncPush() {
+  bookmarksRetry = 3
+  bookmarksGeneration++
   if (settingsSyncPushTimer) {
     clearTimeout(settingsSyncPushTimer)
     settingsSyncPushTimer = null
@@ -171,6 +216,7 @@ export function cancelPendingSyncPush() {
  */
 export function installFlushHandlers() {
   if (typeof window === 'undefined') return
+  window.addEventListener('online', scheduleBookmarksSyncPush)
   window.addEventListener('beforeunload', () => {
     flushSettingsSave()
     flushSettingsSyncPush()

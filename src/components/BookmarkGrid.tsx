@@ -1,3 +1,4 @@
+import { CollectionViewGrid } from './CollectionViewGrid'
 import {
   DndContext,
   DragOverlay,
@@ -9,11 +10,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
-import {
-  SortableContext,
-  arrayMove,
-  rectSortingStrategy,
-} from '@dnd-kit/sortable'
+import { SortableContext, arrayMove, rectSortingStrategy } from '@dnd-kit/sortable'
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { flushSync } from 'react-dom'
 import type { Category } from '../types/bookmark'
@@ -37,6 +34,7 @@ import { IconView } from '../utils/icon'
 const AISearchView = lazy(() => import('./BookmarkGridAISearch'))
 
 export function BookmarkGrid() {
+  const collectionView = useBookmarkStore((s) => s.collectionView)
   const allCards = useBookmarkStore((s) => s.cards)
   const allCategories = useBookmarkStore((s) => s.categories)
   const activeCategoryId = useBookmarkStore((s) => s.activeCategoryId)
@@ -84,15 +82,11 @@ export function BookmarkGrid() {
   const searchResult = useMemo(() => {
     if (!isSearching) return { items: [], rawCount: 0 }
     const matched = tagFilter
-      ? allCards.filter((c) =>
-          c.tags?.some((t) => t.toLowerCase() === tagFilter.toLowerCase()),
-        )
+      ? allCards.filter((c) => c.tags?.some((t) => t.toLowerCase() === tagFilter.toLowerCase()))
       : (() => {
           const kw = keyword.trim().toLowerCase()
           return allCards.filter(
-            (c) =>
-              c.title.toLowerCase().includes(kw) ||
-              c.url.toLowerCase().includes(kw),
+            (c) => c.title.toLowerCase().includes(kw) || c.url.toLowerCase().includes(kw),
           )
         })()
     // 分类路径快查表
@@ -129,9 +123,7 @@ export function BookmarkGrid() {
           categoryPath: pathOf(rep.categoryId),
           dupCount: others.length,
           // 其他副本所在分类（去重，避免同一分类多个文案重复）
-          dupCategoryPaths: Array.from(
-            new Set(others.map((c) => pathOf(c.categoryId))),
-          ),
+          dupCategoryPaths: Array.from(new Set(others.map((c) => pathOf(c.categoryId)))),
         }
       })
       .sort((a, b) => b.card.updatedAt - a.card.updatedAt)
@@ -143,9 +135,7 @@ export function BookmarkGrid() {
     return (
       <Suspense
         fallback={
-          <div className="text-center py-12 text-slate-400 text-sm">
-            ✨ 加载 AI 检索模块…
-          </div>
+          <div className="text-center py-12 text-slate-400 text-sm">✨ 加载 AI 检索模块…</div>
         }
       >
         <AISearchView query={aiQuery} cards={allCards} categories={allCategories} />
@@ -168,16 +158,12 @@ export function BookmarkGrid() {
               'text-xs text-violet-700 dark:text-violet-300',
             )}
           >
-            <span className="text-[10px] uppercase tracking-wider opacity-70">
-              按标签筛选
-            </span>
+            <span className="text-[10px] uppercase tracking-wider opacity-70">按标签筛选</span>
             <span className="font-medium">
               <span className="opacity-60">#</span>
               {tagFilter}
             </span>
-            <span className="text-violet-400 tabular-nums">
-              · {items.length} 张卡片
-            </span>
+            <span className="text-violet-400 tabular-nums">· {items.length} 张卡片</span>
             <button
               type="button"
               onClick={() => setSearchKeyword('')}
@@ -197,14 +183,13 @@ export function BookmarkGrid() {
         {/* 顶部统计：让用户感知"重复被合并了"（tag 模式下另起视觉） */}
         {!tagFilter && items.length > 0 && (
           <div className="text-xs text-slate-400 mb-3 px-1">
-            找到 <span className="tabular-nums text-slate-600 dark:text-slate-300">{items.length}</span>{' '}
+            找到{' '}
+            <span className="tabular-nums text-slate-600 dark:text-slate-300">{items.length}</span>{' '}
             条独立结果
             {rawCount !== items.length && (
               <>
                 {' '}
-                <span className="text-slate-400/80">
-                  · 原始命中 {rawCount} 条，已按 URL 合并
-                </span>
+                <span className="text-slate-400/80">· 原始命中 {rawCount} 条，已按 URL 合并</span>
               </>
             )}
           </div>
@@ -214,14 +199,14 @@ export function BookmarkGrid() {
         <VirtualBookmarkGrid items={items} />
         {items.length === 0 && (
           <div className="col-span-full text-center py-16 text-slate-400 text-sm">
-            {tagFilter
-              ? `没有书签使用 #${tagFilter} 标签`
-              : '没有找到匹配的书签'}
+            {tagFilter ? `没有书签使用 #${tagFilter} 标签` : '没有找到匹配的书签'}
           </div>
         )}
       </div>
     )
   }
+
+  if (collectionView) return <CollectionViewGrid view={collectionView} />
 
   if (!activeCategoryId) return null
 
@@ -234,8 +219,7 @@ export function BookmarkGrid() {
   // 当前层是否完全为空（无子文件夹、无直接书签、无后代）
   const directCardCount = allCards.filter((c) => c.categoryId === activeCategoryId).length
   const directFolderCount = allCategories.filter((c) => c.parentId === activeCategoryId).length
-  const isEmpty =
-    directCardCount === 0 && directFolderCount === 0 && descendants.length === 0
+  const isEmpty = directCardCount === 0 && directFolderCount === 0 && descendants.length === 0
 
   return (
     <div className="flex flex-col gap-8">
@@ -297,12 +281,7 @@ interface SectionProps {
   headerVariant: HeaderVariant
 }
 
-function CategorySection({
-  category,
-  rootId,
-  showFolders,
-  headerVariant,
-}: SectionProps) {
+function CategorySection({ category, rootId, showFolders, headerVariant }: SectionProps) {
   const allCards = useBookmarkStore((s) => s.cards)
   const allCategories = useBookmarkStore((s) => s.categories)
   const setActive = useBookmarkStore((s) => s.setActiveCategory)
@@ -323,9 +302,7 @@ function CategorySection({
   const cardCustomHeightMin = useBookmarkStore((s) => s.settings.cardCustomHeightMin)
   // v0.21.2 / v0.21.8：当书签拖到本 section（header 或下方书签网格区域，
   // 整个 section 都是 drop target）时，让 header 显示高亮提示落点
-  const isSectionDropHovered = useDropHintStore(
-    (s) => s.hoverCategoryId === category.id,
-  )
+  const isSectionDropHovered = useDropHintStore((s) => s.hoverCategoryId === category.id)
 
   // header 渲染辅助：full 显示完整路径头，compact 仅显示折叠按钮（用于根 section）
   const showFullHeader = headerVariant === 'full'
@@ -339,33 +316,24 @@ function CategorySection({
   const subSectionDefaultExpanded = useBookmarkStore(
     (s) => s.settings.subSectionDefaultExpanded ?? false,
   )
-  const [collapsed, setCollapsed] = useState(
-    showFullHeader ? !subSectionDefaultExpanded : false,
-  )
+  const [collapsed, setCollapsed] = useState(showFullHeader ? !subSectionDefaultExpanded : false)
   // v0.21.4：DragOverlay 需要的"当前被拖卡片 id"
   const [activeCardId, setActiveCardId] = useState<string | null>(null)
 
   const subFolders = useMemo(
     () =>
       showFolders
-        ? allCategories
-            .filter((c) => c.parentId === category.id)
-            .sort((a, b) => a.order - b.order)
+        ? allCategories.filter((c) => c.parentId === category.id).sort((a, b) => a.order - b.order)
         : [],
     [allCategories, category.id, showFolders],
   )
 
   const directCards = useMemo(
-    () =>
-      allCards
-        .filter((c) => c.categoryId === category.id)
-        .sort((a, b) => a.order - b.order),
+    () => allCards.filter((c) => c.categoryId === category.id).sort((a, b) => a.order - b.order),
     [allCards, category.id],
   )
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
-  )
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   /* ─── 书签卡片拖拽：同分类排序 + 跨分类 moveCard ─── */
 
@@ -416,10 +384,7 @@ function CategorySection({
       })
       const targetCat = allCategories.find((c) => c.id === hint)
       if (targetCat) {
-        toast.success(
-          '已移动书签',
-          `→「${targetCat.name}」（追加到末尾）`,
-        )
+        toast.success('已移动书签', `→「${targetCat.name}」（追加到末尾）`)
       }
       return
     }
@@ -544,11 +509,7 @@ function CategorySection({
       data-card-drop-target={category.id}
       // 子 section 按相对深度做左缩进，最多缩 3 层（避免超深嵌套时挤压主区域）
       // root section（compact）relativeDepth=0，不缩进
-      style={
-        showFullHeader
-          ? { paddingLeft: Math.min(3, relativeDepth) * 16 }
-          : undefined
-      }
+      style={showFullHeader ? { paddingLeft: Math.min(3, relativeDepth) * 16 } : undefined}
     >
       {showFullHeader && (
         <header
@@ -556,14 +517,9 @@ function CategorySection({
           className={cn(
             'flex items-center gap-2 mb-3 group/sec px-1.5 py-1 -mx-1.5 rounded-md transition-colors',
             // drop hint 高亮（淡蓝色 + ring）
-            isSectionDropHovered &&
-              'bg-sky-50/70 dark:bg-sky-500/10 ring-2 ring-sky-400/60',
+            isSectionDropHovered && 'bg-sky-50/70 dark:bg-sky-500/10 ring-2 ring-sky-400/60',
           )}
-          title={
-            isSectionDropHovered
-              ? `放入文件夹：${category.name}`
-              : undefined
-          }
+          title={isSectionDropHovered ? `放入文件夹：${category.name}` : undefined}
         >
           <button
             onClick={() => setCollapsed((v) => !v)}
@@ -645,7 +601,9 @@ function CategorySection({
             onClick={handleAddCard}
             className="opacity-0 group-hover/sec:opacity-100 transition-opacity btn-ghost !p-1 h-6 w-6 text-sm shrink-0"
             title="在此分类添加书签"
-          >+</button>
+          >
+            +
+          </button>
         </header>
       )}
 
@@ -656,14 +614,9 @@ function CategorySection({
           // v0.21.8 起 drop target 在 <section> 上；header 只保留视觉
           className={cn(
             'flex items-center gap-2 mb-3 group/sec px-1.5 py-1 -mx-1.5 rounded-md transition-colors',
-            isSectionDropHovered &&
-              'bg-sky-50/70 dark:bg-sky-500/10 ring-2 ring-sky-400/60',
+            isSectionDropHovered && 'bg-sky-50/70 dark:bg-sky-500/10 ring-2 ring-sky-400/60',
           )}
-          title={
-            isSectionDropHovered
-              ? `放回当前分类：${category.name}`
-              : undefined
-          }
+          title={isSectionDropHovered ? `放回当前分类：${category.name}` : undefined}
         >
           <button
             onClick={() => setCollapsed((v) => !v)}
@@ -677,9 +630,7 @@ function CategorySection({
           >
             ▸
           </button>
-          <span className="text-xs uppercase tracking-wider text-slate-400 shrink-0">
-            当前分类
-          </span>
+          <span className="text-xs uppercase tracking-wider text-slate-400 shrink-0">当前分类</span>
           <span className="text-xs text-slate-400 tabular-nums shrink-0">
             {/* 与下方主区一致：书签在前，文件夹在后 */}
             {directCards.length > 0 && `${directCards.length} 书签`}
@@ -691,7 +642,9 @@ function CategorySection({
             onClick={handleAddCard}
             className="opacity-0 group-hover/sec:opacity-100 transition-opacity btn-ghost !p-1 h-6 w-6 text-sm shrink-0"
             title="在此分类添加书签"
-          >+</button>
+          >
+            +
+          </button>
         </header>
       )}
 
@@ -703,7 +656,7 @@ function CategorySection({
 
               所有 section 始终渲染该块：哪怕 0 书签也保留 + 占位，让"新建书签"
               的发现性在根 / 子级文件夹中保持一致（root + sub 同款交互）。 */}
-          {(
+          {
             <div className={subFolders.length > 0 ? 'mb-4' : ''}>
               {/* 仅当下面有文件夹 + 上方至少有 1 张书签时给书签块加标题做视觉分隔；
                   只剩一个 + 占位时挂"书签"小标会显得奇怪 */}
@@ -741,36 +694,38 @@ function CategorySection({
                       cardCustomWidthMax,
                     })
                     return (
-                  <div className={grid.className} style={grid.style}>
-                    {directCards.map((card) => (
-                      <BookmarkCardItem key={card.id} card={card} />
-                    ))}
-                    {/* + 占位（所有层级）：默认透明虚边、hover 切毛玻璃 + 上浮，
+                      <div className={grid.className} style={grid.style}>
+                        {directCards.map((card) => (
+                          <BookmarkCardItem key={card.id} card={card} />
+                        ))}
+                        {/* + 占位（所有层级）：默认透明虚边、hover 切毛玻璃 + 上浮，
                         色阶对齐 header 文字（slate-700/dark:slate-200） */}
-                    {(
-                      <button
-                        onClick={handleAddCard}
-                        style={addCardInlineStyle}
-                        className={cn(
-                          'group/add justify-self-start rounded-xl text-3xl flex items-center justify-center shrink-0',
-                          'border border-dashed border-slate-300/60 dark:border-slate-600/50',
-                          'text-slate-700 dark:text-slate-200',
-                          'bg-transparent',
-                          'transition-all duration-200 ease-out',
-                          'hover:bg-white/60 dark:hover:bg-slate-800/55 hover:backdrop-blur',
-                          'hover:border-transparent',
-                          'hover:-translate-y-0.5',
-                          'hover:shadow-[0_2px_4px_rgba(15,23,42,0.05),0_12px_24px_-4px_rgba(99,102,241,0.18)]',
-                          'dark:hover:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_14px_28px_-4px_rgba(99,102,241,0.35)]',
-                          addCardSquareClass,
-                        )}
-                        title="新建书签"
-                        aria-label="新建书签"
-                      >
-                        <span className="leading-none opacity-60 group-hover/add:opacity-100 transition-opacity">+</span>
-                      </button>
-                    )}
-                  </div>
+                        {
+                          <button
+                            onClick={handleAddCard}
+                            style={addCardInlineStyle}
+                            className={cn(
+                              'group/add justify-self-start rounded-xl text-3xl flex items-center justify-center shrink-0',
+                              'border border-dashed border-slate-300/60 dark:border-slate-600/50',
+                              'text-slate-700 dark:text-slate-200',
+                              'bg-transparent',
+                              'transition-all duration-200 ease-out',
+                              'hover:bg-white/60 dark:hover:bg-slate-800/55 hover:backdrop-blur',
+                              'hover:border-transparent',
+                              'hover:-translate-y-0.5',
+                              'hover:shadow-[0_2px_4px_rgba(15,23,42,0.05),0_12px_24px_-4px_rgba(99,102,241,0.18)]',
+                              'dark:hover:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_14px_28px_-4px_rgba(99,102,241,0.35)]',
+                              addCardSquareClass,
+                            )}
+                            title="新建书签"
+                            aria-label="新建书签"
+                          >
+                            <span className="leading-none opacity-60 group-hover/add:opacity-100 transition-opacity">
+                              +
+                            </span>
+                          </button>
+                        }
+                      </div>
                     )
                   })()}
                 </SortableContext>
@@ -800,7 +755,7 @@ function CategorySection({
                 </DragOverlay>
               </DndContext>
             </div>
-          )}
+          }
 
           {/* v0.21.2：移除了 root section 下的"文件夹"网格区块——
               子文件夹的信息（图标、名称、数量、备注）已经合并到

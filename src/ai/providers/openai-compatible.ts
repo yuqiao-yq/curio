@@ -1,10 +1,5 @@
-import type {
-  AIProvider,
-  AIProviderConfig,
-  ChatChunk,
-  ChatOptions,
-  ChatResponse,
-} from '../types'
+import { requireSiteAccess } from '../../services/sitePermissions'
+import type { AIProvider, AIProviderConfig, ChatChunk, ChatOptions, ChatResponse } from '../types'
 
 /**
  * OpenAI Compatible Provider
@@ -178,17 +173,14 @@ export class OpenAICompatibleProvider implements AIProvider {
 
   // ─── 内部工具 ─────────────────────────────────────────
 
-  private fetch(
-    path: string,
-    body: object,
-    signal?: AbortSignal,
-  ): Promise<Response> {
+  private async fetch(path: string, body: object, signal?: AbortSignal): Promise<Response> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     }
     if (this.apiKey) {
       headers['Authorization'] = `Bearer ${this.apiKey}`
     }
+    await requireSiteAccess(this.baseURL)
     return fetch(`${this.baseURL}${path}`, {
       method: 'POST',
       headers,
@@ -201,10 +193,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     let detail = ''
     try {
       const data = await res.json()
-      detail =
-        data?.error?.message ??
-        data?.message ??
-        JSON.stringify(data).slice(0, 200)
+      detail = data?.error?.message ?? data?.message ?? JSON.stringify(data).slice(0, 200)
     } catch {
       try {
         detail = await res.text()

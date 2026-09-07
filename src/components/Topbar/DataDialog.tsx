@@ -4,6 +4,8 @@ import { cancelPendingBrowserSyncExport } from '../../stores/useBookmarkStore/sc
 import { cn } from '../../utils/cn'
 import { DialogShell } from './DialogShell'
 import { SyncSection } from './SyncSection'
+import { BackupSection } from './BackupSection'
+import { DriveSetupSection } from './DriveSetupSection'
 
 /**
  * 数据管理弹层：4 个数据操作入口 + 跨设备同步面板。
@@ -82,6 +84,8 @@ export function DataDialog({
 
         {/* 跨设备同步（V1.5）：与数据导入导出归一处「数据管理」语义下 */}
         <SyncSection settings={settings} />
+        <BackupSection />
+        <DriveSetupSection />
       </div>
     </DialogShell>
   )
@@ -162,9 +166,7 @@ function ActionItem({
     >
       <span className="text-lg leading-none mt-0.5 shrink-0">{icon}</span>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-slate-800 dark:text-slate-100">
-          {title}
-        </div>
+        <div className="text-sm font-medium text-slate-800 dark:text-slate-100">{title}</div>
         <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
           {desc}
         </div>

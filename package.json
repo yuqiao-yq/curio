@@ -25,7 +25,8 @@
     "test:coverage": "vitest run --coverage",
     "icons": "node scripts/generate-icons.mjs",
     "release": "bash scripts/release.sh",
-    "postinstall": "wxt prepare"
+    "postinstall": "wxt prepare",
+    "bench": "vitest bench --run"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",
@@ -74,5 +75,8 @@
     "overrides": {
       "@vitejs/plugin-react": "^4.3.4"
     }
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
   }
 }

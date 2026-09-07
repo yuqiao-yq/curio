@@ -1,4 +1,12 @@
 import { browser } from 'wxt/browser'
+import { withStorageLock, LOCAL_CHANGE_KEY, LOCAL_WRITER_ID } from '../services/storageLock'
+import { saveBackup } from './BackupsDB'
+import {
+  BOOKMARK_SYNC_STATE_KEY,
+  getBookmarkSyncState,
+  PendingBookmarkChangesError,
+} from '../services/bookmarkSyncState'
+import { INBOX_ID } from '../utils/collections'
 import type {
   BookmarkCard,
   Category,
@@ -11,6 +19,8 @@ import type {
   BookmarkRepository,
   BulkImportMode,
   BulkImportResult,
+  ImportOptions,
+  BookmarkSyncSnapshot,
 } from './types'
 
 const KEYS = {
@@ -28,14 +38,27 @@ const KEYS = {
  * - V1 MVP 全量数据
  * - V2 离线缓存
  *
- * 容量限制：5MB（够存数千个书签元数据）。
+ * 容量由浏览器决定（Chrome 114+ 默认 10MB）；备份单独存放在 IndexedDB。
  * 大体积数据（缩略图等）后续迁到 Dexie/IndexedDB。
  *
  * 注意：必须使用 wxt/browser 导出的 `browser`（在 Firefox 下指向原生
  * `globalThis.browser`，是 Promise-based；在 Chrome 下指向 `globalThis.chrome`）。
  * 直接使用 `chrome.*` 在 Firefox 下不会返回 Promise，会导致 await 拿到 undefined。
  */
-export class LocalRepository implements BookmarkRepository {
+class StorageRepository {
+  constructor(private readonly fromSync = false) {}
+
+  private async writeData(items: Record<string, unknown>): Promise<void> {
+    const revision = crypto.randomUUID()
+    const bookmarksChanged = KEYS.cards in items || KEYS.categories in items
+    await browser.storage.local.set({
+      ...items,
+      ...(bookmarksChanged
+        ? { [BOOKMARK_SYNC_STATE_KEY]: { revision, pending: !this.fromSync } }
+        : {}),
+      [LOCAL_CHANGE_KEY]: { writer: LOCAL_WRITER_ID, revision },
+    })
+  }
   // ---------- helpers ----------
   private async readArray<T>(key: string): Promise<T[]> {
     const result = await browser.storage.local.get(key)
@@ -43,7 +66,7 @@ export class LocalRepository implements BookmarkRepository {
   }
 
   private async writeArray<T>(key: string, value: T[]): Promise<void> {
-    await browser.storage.local.set({ [key]: value })
+    await this.writeData({ [key]: value })
   }
 
   // ---------- 分类 ----------
@@ -86,24 +109,16 @@ export class LocalRepository implements BookmarkRepository {
     ])
     // 级联找到所有后代分类（BFS）
     const allDeleteIds = collectDescendants(ids, cats)
-    await Promise.all([
-      this.writeArray(
-        KEYS.categories,
-        cats.filter((c) => !allDeleteIds.has(c.id))
-      ),
-      this.writeArray(
-        KEYS.cards,
-        cards.filter((c) => !allDeleteIds.has(c.categoryId))
-      ),
-    ])
+    await this.writeData({
+      [KEYS.categories]: cats.filter((c) => !allDeleteIds.has(c.id)),
+      [KEYS.cards]: cards.filter((c) => !allDeleteIds.has(c.categoryId)),
+    })
   }
 
   // ---------- 卡片 ----------
   async getCards(categoryId?: string): Promise<BookmarkCard[]> {
     const list = await this.readArray<BookmarkCard>(KEYS.cards)
-    const filtered = categoryId
-      ? list.filter((c) => c.categoryId === categoryId)
-      : list
+    const filtered = categoryId ? list.filter((c) => c.categoryId === categoryId) : list
     return filtered.sort((a, b) => a.order - b.order)
   }
 
@@ -115,7 +130,22 @@ export class LocalRepository implements BookmarkRepository {
     } else {
       list.push({ ...card, updatedAt: Date.now() })
     }
-    await this.writeArray(KEYS.cards, list)
+    const categories = card.categoryId === INBOX_ID ? await this.getCategories() : undefined
+    const inbox =
+      categories && !categories.some((c) => c.id === INBOX_ID)
+        ? {
+            id: INBOX_ID,
+            name: '收件箱',
+            icon: '📥',
+            order: -1,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          }
+        : undefined
+    await this.writeData({
+      [KEYS.cards]: list,
+      ...(inbox && categories ? { [KEYS.categories]: [...categories, inbox] } : {}),
+    })
   }
 
   async saveCards(cards: BookmarkCard[]): Promise<void> {
@@ -132,7 +162,7 @@ export class LocalRepository implements BookmarkRepository {
     const list = await this.readArray<BookmarkCard>(KEYS.cards)
     await this.writeArray(
       KEYS.cards,
-      list.filter((c) => c.id !== id)
+      list.filter((c) => c.id !== id),
     )
   }
 
@@ -170,7 +200,7 @@ export class LocalRepository implements BookmarkRepository {
   }
 
   async saveSettings(settings: UserSettings): Promise<void> {
-    await browser.storage.local.set({ [KEYS.settings]: settings })
+    await this.writeData({ [KEYS.settings]: settings })
   }
 
   // ---------- 样式预设 ----------
@@ -193,29 +223,26 @@ export class LocalRepository implements BookmarkRepository {
    */
   async savePresets(list: StylePreset[]): Promise<void> {
     const userOnly = list.filter((p) => p && p.kind === 'user')
-    await browser.storage.local.set({ [KEYS.presets]: userOnly })
+    await this.writeData({ [KEYS.presets]: userOnly })
   }
 
   /** 清空所有用户预设（不动 builtin） */
   async clearPresets(): Promise<void> {
-    await browser.storage.local.remove(KEYS.presets)
+    await this.writeData({ [KEYS.presets]: [] })
   }
 
   // ---------- 批量 ----------
-  async bulkImport(
-    data: ExportData,
-    mode: BulkImportMode = 'merge',
-  ): Promise<BulkImportResult> {
+  async bulkImport(data: ExportData, mode: BulkImportMode = 'merge'): Promise<BulkImportResult> {
     const incomingCats = data.categories ?? []
     const incomingCards = data.cards ?? []
 
     if (mode === 'replace') {
       // 完全替换：等价于旧行为，但显式声明，避免误用
-      await Promise.all([
-        this.writeArray(KEYS.categories, incomingCats),
-        this.writeArray(KEYS.cards, incomingCards),
-        data.settings ? this.saveSettings(data.settings) : Promise.resolve(),
-      ])
+      await this.writeData({
+        [KEYS.categories]: incomingCats,
+        [KEYS.cards]: incomingCards,
+        ...(data.settings ? { [KEYS.settings]: data.settings } : {}),
+      })
       return {
         mode,
         categoriesAdded: incomingCats.length,
@@ -237,10 +264,7 @@ export class LocalRepository implements BookmarkRepository {
     const maxOrderByParent = new Map<string, number>()
     for (const c of existCats) {
       const key = c.parentId ?? ''
-      maxOrderByParent.set(
-        key,
-        Math.max(maxOrderByParent.get(key) ?? -1, c.order),
-      )
+      maxOrderByParent.set(key, Math.max(maxOrderByParent.get(key) ?? -1, c.order))
     }
     let categoriesAdded = 0
     let categoriesUpdated = 0
@@ -266,10 +290,7 @@ export class LocalRepository implements BookmarkRepository {
     const cardMap = new Map(existCards.map((c) => [c.id, c]))
     const maxOrderByCat = new Map<string, number>()
     for (const c of existCards) {
-      maxOrderByCat.set(
-        c.categoryId,
-        Math.max(maxOrderByCat.get(c.categoryId) ?? -1, c.order),
-      )
+      maxOrderByCat.set(c.categoryId, Math.max(maxOrderByCat.get(c.categoryId) ?? -1, c.order))
     }
     let cardsAdded = 0
     let cardsUpdated = 0
@@ -288,11 +309,10 @@ export class LocalRepository implements BookmarkRepository {
       }
     }
 
-    await Promise.all([
-      this.writeArray(KEYS.categories, Array.from(catMap.values())),
-      this.writeArray(KEYS.cards, Array.from(cardMap.values())),
-      // settings 在合并模式下故意不覆盖（避免破坏当前主题/布局/壁纸偏好）
-    ])
+    await this.writeData({
+      [KEYS.categories]: Array.from(catMap.values()),
+      [KEYS.cards]: Array.from(cardMap.values()),
+    })
 
     return {
       mode,
@@ -319,12 +339,76 @@ export class LocalRepository implements BookmarkRepository {
   }
 
   async clear(): Promise<void> {
-    await browser.storage.local.remove([
-      KEYS.categories,
-      KEYS.cards,
-      KEYS.settings,
-      KEYS.presets,
-    ])
+    await this.writeData({
+      [KEYS.categories]: [],
+      [KEYS.cards]: [],
+      [KEYS.settings]: DEFAULT_SETTINGS,
+      [KEYS.presets]: [],
+    })
+  }
+}
+
+/** 所有读改写共享跨页面锁；备份与修改处于同一临界区。 */
+export class LocalRepository extends StorageRepository implements BookmarkRepository {
+  private mutate<T>(
+    action: (repo: StorageRepository) => Promise<T>,
+    reason?: string,
+    options?: ImportOptions,
+  ): Promise<T> {
+    return withStorageLock('local-write', async () => {
+      if (options?.fromSync && !options.discardPending && (await getBookmarkSyncState())?.pending) {
+        throw new PendingBookmarkChangesError()
+      }
+      if (reason) await saveBackup(await super.bulkExport(), reason)
+      return action(new StorageRepository(options?.fromSync))
+    })
+  }
+
+  saveCategory(cat: Category) {
+    return this.mutate((repo) => repo.saveCategory(cat))
+  }
+  saveCategories(cats: Category[]) {
+    return this.mutate((repo) => repo.saveCategories(cats))
+  }
+  deleteCategories(ids: string[]) {
+    return this.mutate((repo) => repo.deleteCategories(ids), '删除分类')
+  }
+  saveCard(card: BookmarkCard) {
+    return this.mutate((repo) => repo.saveCard(card))
+  }
+  saveCards(cards: BookmarkCard[]) {
+    return this.mutate((repo) => repo.saveCards(cards))
+  }
+  deleteCard(id: string) {
+    return this.mutate((repo) => repo.deleteCard(id), '删除书签')
+  }
+  saveSettings(settings: UserSettings) {
+    return this.mutate((repo) => repo.saveSettings(settings))
+  }
+  savePresets(list: StylePreset[]) {
+    return this.mutate((repo) => repo.savePresets(list))
+  }
+  clearPresets() {
+    return this.mutate((repo) => repo.clearPresets())
+  }
+  bulkImport(data: ExportData, mode: BulkImportMode = 'merge', options?: ImportOptions) {
+    return this.mutate(
+      (repo) => repo.bulkImport(data, mode),
+      mode === 'replace' ? '覆盖 / 恢复前' : '合并导入前',
+      options,
+    )
+  }
+  bulkExport() {
+    return withStorageLock('local-write', () => super.bulkExport())
+  }
+  getSyncSnapshot(): Promise<BookmarkSyncSnapshot> {
+    return withStorageLock('local-write', async () => ({
+      data: await super.bulkExport(),
+      state: await getBookmarkSyncState(),
+    }))
+  }
+  clear() {
+    return this.mutate((repo) => repo.clear(), '清空数据前')
   }
 }
 

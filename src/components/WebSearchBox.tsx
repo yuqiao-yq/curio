@@ -1,3 +1,4 @@
+import { searchBookmarks } from '../utils/searchBookmarks'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '../utils/cn'
 import { getFaviconUrl } from '../utils/favicon'
@@ -34,10 +35,30 @@ interface Engine {
 }
 
 const ENGINES: Engine[] = [
-  { id: 'google',     name: 'Google',     homepage: 'https://www.google.com',     searchUrl: 'https://www.google.com/search?q={q}' },
-  { id: 'bing',       name: 'Bing',       homepage: 'https://www.bing.com',       searchUrl: 'https://www.bing.com/search?q={q}' },
-  { id: 'baidu',      name: '百度',        homepage: 'https://www.baidu.com',       searchUrl: 'https://www.baidu.com/s?wd={q}' },
-  { id: 'duckduckgo', name: 'DuckDuckGo', homepage: 'https://duckduckgo.com',     searchUrl: 'https://duckduckgo.com/?q={q}' },
+  {
+    id: 'google',
+    name: 'Google',
+    homepage: 'https://www.google.com',
+    searchUrl: 'https://www.google.com/search?q={q}',
+  },
+  {
+    id: 'bing',
+    name: 'Bing',
+    homepage: 'https://www.bing.com',
+    searchUrl: 'https://www.bing.com/search?q={q}',
+  },
+  {
+    id: 'baidu',
+    name: '百度',
+    homepage: 'https://www.baidu.com',
+    searchUrl: 'https://www.baidu.com/s?wd={q}',
+  },
+  {
+    id: 'duckduckgo',
+    name: 'DuckDuckGo',
+    homepage: 'https://duckduckgo.com',
+    searchUrl: 'https://duckduckgo.com/?q={q}',
+  },
 ]
 
 const STORAGE_KEY = 'curio:web-search-engine'
@@ -172,6 +193,8 @@ function saveHistory(list: string[]) {
 export function WebSearchBox() {
   const [engine, setEngine] = useState<Engine>(() => loadEngine())
   const [raw, setRaw] = useState('')
+  const [selectedMatch, setSelectedMatch] = useState(-1)
+  useEffect(() => setSelectedMatch(-1), [raw])
   const [open, setOpen] = useState(false)
   const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
@@ -310,18 +333,11 @@ export function WebSearchBox() {
     return () => document.removeEventListener('mousedown', onDocClick)
   }, [open])
 
-  /** 找到第一个匹配本地书签（默认模式回车的目标） */
-  const firstLocalMatch = useMemo(() => {
-    if (parsed.mode !== 'auto' || !parsed.q) return null
-    const kw = parsed.q.toLowerCase()
-    return (
-      cards.find(
-        (c) =>
-          c.title.toLowerCase().includes(kw) ||
-          c.url.toLowerCase().includes(kw),
-      ) ?? null
-    )
+  const localMatches = useMemo(() => {
+    if (!['auto', 'local'].includes(parsed.mode) || !parsed.q) return []
+    return searchBookmarks(cards, parsed.q, 8)
   }, [cards, parsed.mode, parsed.q])
+  const firstLocalMatch = localMatches[Math.max(0, selectedMatch)] ?? localMatches[0] ?? null
 
   /**
    * 当前 q 是否看起来是 URL —— 仅在 auto 模式判定。
@@ -432,8 +448,7 @@ export function WebSearchBox() {
    * - 有历史
    * - 引擎下拉未打开（同一位置同时只显示一个 popover）
    */
-  const showHistory =
-    focused && raw.length === 0 && history.length > 0 && !open
+  const showHistory = focused && raw.length === 0 && history.length > 0 && !open
 
   return (
     <div
@@ -487,9 +502,7 @@ export function WebSearchBox() {
           className={cn(
             'flex items-center gap-1.5 overflow-hidden shrink-0',
             'transition-all duration-300 ease-out',
-            expanded
-              ? 'max-w-[120px] opacity-100'
-              : 'max-w-0 opacity-0 -ml-1.5',
+            expanded ? 'max-w-[120px] opacity-100' : 'max-w-0 opacity-0 -ml-1.5',
           )}
           aria-hidden={!expanded}
         >
@@ -503,9 +516,40 @@ export function WebSearchBox() {
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') submit()
-            if (e.key === 'Escape') setRaw('')
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return
+            if (
+              (e.key === 'ArrowDown' || e.key === 'ArrowUp') &&
+              localMatches.length &&
+              !urlPreview
+            ) {
+              e.preventDefault()
+              setSelectedMatch((prev) =>
+                e.key === 'ArrowDown'
+                  ? (prev + 1) % localMatches.length
+                  : prev <= 0
+                    ? localMatches.length - 1
+                    : prev - 1,
+              )
+            }
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              submit()
+            }
+            if (e.key === 'Escape') {
+              setRaw('')
+              e.currentTarget.blur()
+            }
           }}
+          role="combobox"
+          aria-label="搜索书签或网页"
+          aria-autocomplete="list"
+          aria-expanded={focused && localMatches.length > 0 && !urlPreview}
+          aria-controls="curio-search-suggestions"
+          aria-activedescendant={
+            focused && localMatches.length > 0 && !urlPreview
+              ? `curio-search-option-${Math.max(0, Math.min(selectedMatch, localMatches.length - 1))}`
+              : undefined
+          }
           placeholder={expanded ? PLACEHOLDER_HINTS[phIndex] : '搜索'}
           className={cn(
             'flex-1 min-w-0 h-full px-2 text-[15px] bg-transparent outline-none',
@@ -519,15 +563,15 @@ export function WebSearchBox() {
             onClick={() => setRaw('')}
             className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-1.5 text-xs h-7 shrink-0"
             title="清空 (Esc)"
-          >✕</button>
+          >
+            ✕
+          </button>
         )}
 
         <button
           type="button"
           onClick={submit}
-          disabled={
-            !parsed.q || parsed.mode === 'tag' || parsed.mode === 'ai'
-          }
+          disabled={!parsed.q || parsed.mode === 'tag' || parsed.mode === 'ai'}
           tabIndex={expanded ? 0 : -1}
           aria-hidden={!expanded}
           className={cn(
@@ -563,6 +607,41 @@ export function WebSearchBox() {
                   : '打开'}
         </button>
       </div>
+
+      {focused && localMatches.length > 0 && !urlPreview && (
+        <div
+          id="curio-search-suggestions"
+          role="listbox"
+          aria-label="书签建议"
+          onMouseDown={(e) => e.preventDefault()}
+          className="absolute z-20 left-0 right-0 mt-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg overflow-hidden"
+        >
+          {localMatches.map((card, i) => (
+            <button
+              id={`curio-search-option-${i}`}
+              key={card.id}
+              type="button"
+              role="option"
+              aria-selected={i === Math.max(0, selectedMatch)}
+              className={cn(
+                'block w-full text-left px-3 py-2 text-sm',
+                i === Math.max(0, selectedMatch)
+                  ? 'bg-brand/10 text-brand'
+                  : 'text-slate-600 dark:text-slate-300',
+              )}
+              onMouseEnter={() => setSelectedMatch(i)}
+              onClick={() => {
+                recordHistory(raw)
+                window.open(card.url, '_blank', 'noopener,noreferrer')
+                setRaw('')
+              }}
+            >
+              <span className="block truncate">{card.title}</span>
+              <span className="block truncate text-xs opacity-60">{card.url}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* 最近搜索下拉：聚焦且 raw 为空时显示
           mousedown preventDefault 避免点击让 input 失焦，从而触发收起动画把列表"点空" */}
@@ -638,25 +717,36 @@ export function WebSearchBox() {
             <button
               key={e.id}
               type="button"
-              onClick={() => { setEngine(e); setOpen(false) }}
+              onClick={() => {
+                setEngine(e)
+                setOpen(false)
+              }}
               className={cn(
                 'w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left',
                 'hover:bg-slate-100 dark:hover:bg-slate-700/60',
-                e.id === engine.id ? 'text-brand font-medium' : 'text-slate-700 dark:text-slate-200',
+                e.id === engine.id
+                  ? 'text-brand font-medium'
+                  : 'text-slate-700 dark:text-slate-200',
               )}
             >
               <img
                 src={getFaviconUrl(e.homepage, 16)}
                 alt=""
                 className="w-4 h-4 rounded-sm"
-                onError={(ev) => { (ev.currentTarget as HTMLImageElement).style.visibility = 'hidden' }}
+                onError={(ev) => {
+                  ;(ev.currentTarget as HTMLImageElement).style.visibility = 'hidden'
+                }}
               />
               <span className="flex-1">{e.name}</span>
               {e.id === engine.id && <span className="text-xs">✓</span>}
             </button>
           ))}
           <div className="mt-1 px-3 pt-1.5 pb-1 border-t border-slate-100 dark:border-slate-700/60 text-[10px] text-slate-400 leading-relaxed">
-            提示：<code className="font-mono text-slate-500">@web 关键字</code> 走网页搜索；<code className="font-mono text-slate-500">@bm 关键字</code> 仅查本地书签；<code className="font-mono text-slate-500">#标签名</code> 按标签筛选；<code className="font-mono text-slate-500">@ai 关键字</code> AI 语义搜索（需先在 ⚙ 设置生成 embedding）。
+            提示：<code className="font-mono text-slate-500">@web 关键字</code> 走网页搜索；
+            <code className="font-mono text-slate-500">@bm 关键字</code> 仅查本地书签；
+            <code className="font-mono text-slate-500">#标签名</code> 按标签筛选；
+            <code className="font-mono text-slate-500">@ai 关键字</code> AI 语义搜索（需先在 ⚙
+            设置生成 embedding）。
           </div>
         </div>
       )}

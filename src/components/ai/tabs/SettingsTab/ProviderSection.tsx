@@ -1,3 +1,4 @@
+import { requestSiteAccess } from '../../../../services/sitePermissions'
 import { useMemo, useState } from 'react'
 import {
   useAISettingsStore,
@@ -32,6 +33,13 @@ export function ProviderRow({ config }: { config: AIProviderConfig }) {
   const handleTest = async () => {
     setTesting(true)
     try {
+      if (
+        config.type !== 'window-ai' &&
+        !(await requestSiteAccess(config.baseURL ?? 'https://api.openai.com/v1'))
+      ) {
+        toast.info('未授予模型访问权限')
+        return
+      }
       const r = await testConnection(config)
       if (r.ok) {
         toast.success('连接正常', r.message)
@@ -39,6 +47,8 @@ export function ProviderRow({ config }: { config: AIProviderConfig }) {
         // 失败提示可能很长（chrome://flags 步骤等），延长展示时间到 30s 让用户看完
         toast.error('连接失败', r.message, 30_000)
       }
+    } catch (err) {
+      toast.error('连接失败', String(err))
     } finally {
       setTesting(false)
     }
@@ -66,16 +76,12 @@ export function ProviderRow({ config }: { config: AIProviderConfig }) {
       )}
     >
       <div className="flex items-center gap-2 px-3 py-2">
-        <span className="text-base leading-none">
-          {config.type === 'window-ai' ? '🟢' : '☁'}
-        </span>
+        <span className="text-base leading-none">{config.type === 'window-ai' ? '🟢' : '☁'}</span>
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">
             {config.name}
           </div>
-          <div className="text-[11px] text-slate-400 truncate font-mono">
-            {config.model}
-          </div>
+          <div className="text-[11px] text-slate-400 truncate font-mono">{config.model}</div>
         </div>
         <button
           type="button"
@@ -142,9 +148,7 @@ export function ProviderRow({ config }: { config: AIProviderConfig }) {
             <Field
               label="Embedding 模型"
               value={config.embeddingModel ?? ''}
-              onChange={(v) =>
-                updateProvider(config.id, { embeddingModel: v.trim() || undefined })
-              }
+              onChange={(v) => updateProvider(config.id, { embeddingModel: v.trim() || undefined })}
               mono
               placeholder="可选；如 text-embedding-3-small"
             />
@@ -188,9 +192,7 @@ export function AddProviderForm({
     const groups = order.map((g) => ({
       group: g,
       label: PROVIDER_GROUP_LABEL[g],
-      items: PROVIDER_PRESETS.map((p, i) => ({ p, i })).filter(
-        ({ p }) => p.group === g,
-      ),
+      items: PROVIDER_PRESETS.map((p, i) => ({ p, i })).filter(({ p }) => p.group === g),
     }))
     return groups.filter((g) => g.items.length > 0)
   }, [])
@@ -205,18 +207,25 @@ export function AddProviderForm({
   }
 
   // 不需要 apiKey 的本地 / 自部署服务（启发式：默认 baseURL 含 localhost / 127 / YOUR_HOST）
-  const isLocalLike =
-    /localhost|127\.0\.0\.1|YOUR_HOST|YOUR_RESOURCE/i.test(preset.baseURL)
+  const isLocalLike = /localhost|127\.0\.0\.1|YOUR_HOST|YOUR_RESOURCE/i.test(preset.baseURL)
 
   const canAdd =
     name.trim().length > 0 &&
     model.trim().length > 0 &&
     (preset.type === 'window-ai' ||
-      (baseURL.trim().length > 0 &&
-        (isLocalLike || apiKey.trim().length > 0)))
+      (baseURL.trim().length > 0 && (isLocalLike || apiKey.trim().length > 0)))
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!canAdd) return
+    try {
+      if (preset.type !== 'window-ai' && !(await requestSiteAccess(baseURL.trim()))) {
+        toast.info('未添加模型', '未授予模型地址访问权限')
+        return
+      }
+    } catch (err) {
+      toast.error('无法添加模型', String(err))
+      return
+    }
     addProvider({
       type: preset.type,
       name: name.trim(),
@@ -239,9 +248,7 @@ export function AddProviderForm({
       )}
     >
       <div className="flex items-center justify-between">
-        <h5 className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-          添加 Provider
-        </h5>
+        <h5 className="text-xs font-semibold text-slate-700 dark:text-slate-200">添加 Provider</h5>
         <button
           type="button"
           onClick={onClose}
@@ -252,9 +259,7 @@ export function AddProviderForm({
       </div>
 
       <div>
-        <label className="text-[11px] text-slate-500 dark:text-slate-400 block mb-1">
-          预设
-        </label>
+        <label className="text-[11px] text-slate-500 dark:text-slate-400 block mb-1">预设</label>
         <select
           value={presetIdx}
           onChange={(e) => switchPreset(Number(e.target.value))}
@@ -330,9 +335,7 @@ export function RouteRow({
 
   return (
     <div className="flex items-center gap-2">
-      <span className="text-xs text-slate-500 dark:text-slate-400 w-20 shrink-0">
-        {label}
-      </span>
+      <span className="text-xs text-slate-500 dark:text-slate-400 w-20 shrink-0">{label}</span>
       <select
         value={current}
         onChange={(e) => setRoute(task, e.target.value)}

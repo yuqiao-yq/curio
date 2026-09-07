@@ -296,3 +296,12 @@ describe('legacyMigration: 并发 + 异常', () => {
     expect(all2['curio:foo']).toBe(1)
   })
 })
+
+it('后台已写完成标记时仍补迁页面 localStorage', async () => {
+  await chrome.storage.local.set({ [FLAG]: Date.now() })
+  localStorage.setItem('tabit:search-history', '["保留历史"]')
+  const run = await fresh()
+  await run()
+  expect(localStorage.getItem('curio:search-history')).toBe('["保留历史"]')
+  expect(localStorage.getItem('tabit:search-history')).toBeNull()
+})

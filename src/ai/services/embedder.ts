@@ -75,10 +75,7 @@ export function contentHashOf(text: string): string {
  * 余弦相似度。两个等长向量：a · b / (|a| × |b|)。
  * Float32Array 直接 .reduce 会被装箱很慢，手写循环最快。
  */
-export function cosineSimilarity(
-  a: Float32Array | number[],
-  b: Float32Array | number[],
-): number {
+export function cosineSimilarity(a: Float32Array | number[], b: Float32Array | number[]): number {
   const len = Math.min(a.length, b.length)
   if (len === 0) return 0
   let dot = 0
@@ -137,7 +134,8 @@ export async function computeEmbedStatus(
     indexed++
     // 把已抓取的正文也纳入 hash：抓取后 hash 会变 → 提示 stale → 用户主动「补缺」
     const page = pageMap.get(card.id)
-    const pageBody = page?.status === 'ok' ? page.content : undefined
+    const pageBody =
+      settings.privacy.sendPageContent && page?.status === 'ok' ? page.content : undefined
     const hash = contentHashOf(buildContent(card, pageBody))
     if (row.contentHash !== hash) stale++
     if (expectedModel && row.model !== expectedModel) mismatch++
@@ -150,9 +148,7 @@ export async function computeEmbedStatus(
   for (const r of rows) {
     modelCount.set(r.model, (modelCount.get(r.model) ?? 0) + 1)
   }
-  const sorted = Array.from(modelCount.entries()).sort(
-    (a, b) => b[1] - a[1],
-  )
+  const sorted = Array.from(modelCount.entries()).sort((a, b) => b[1] - a[1])
 
   return {
     totalCards: cards.length,
@@ -191,12 +187,13 @@ interface PendingItem {
 async function selectPending(
   cards: BookmarkCard[],
   mode: 'all' | 'missing',
+  allowBody: boolean,
 ): Promise<PendingItem[]> {
   // 预加载 page contents：让 buildContent 一次性吃到正文，避免逐条查 db
   const pageMap = await getPageContentsMap(cards.map((c) => c.id))
   const bodyOf = (id: string): string | undefined => {
     const p = pageMap.get(id)
-    return p?.status === 'ok' ? p.content : undefined
+    return allowBody && p?.status === 'ok' ? p.content : undefined
   }
   if (mode === 'all') {
     return cards.map((c) => {
@@ -255,7 +252,11 @@ export async function runEmbed(opts: RunEmbedOptions): Promise<RunEmbedResult> {
   // 这里读 settings 推导，与 status 显示一致
   const model = getExpectedEmbeddingModel(opts.settings) ?? 'text-embedding-3-small'
 
-  const pending = await selectPending(opts.cards, opts.mode)
+  const pending = await selectPending(
+    opts.cards,
+    opts.mode,
+    opts.settings.privacy.sendPageContent === true,
+  )
   if (pending.length === 0) {
     return { generated: 0, saved: 0, model, errors: [] }
   }
@@ -335,9 +336,7 @@ export interface SearchByEmbeddingOptions {
  *
  * 没有命中 vector 的书签会被忽略（兜底由调用方做 substring 补丁）。
  */
-export async function searchByEmbedding(
-  opts: SearchByEmbeddingOptions,
-): Promise<EmbedSearchHit[]> {
+export async function searchByEmbedding(opts: SearchByEmbeddingOptions): Promise<EmbedSearchHit[]> {
   const q = opts.query.trim()
   if (!q) return []
 
@@ -346,10 +345,7 @@ export async function searchByEmbedding(
     throw new Error('Provider 不支持 embedding')
   }
 
-  const [vectors, rows] = await Promise.all([
-    provider.embedding([q]),
-    getAllEmbeddings(),
-  ])
+  const [vectors, rows] = await Promise.all([provider.embedding([q]), getAllEmbeddings()])
   if (opts.signal?.aborted) throw new Error('aborted')
 
   const queryVec = vectors[0]

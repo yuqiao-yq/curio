@@ -1,12 +1,14 @@
 # Curio - 开发路线图
 
+> 2026-09-07：当前实施顺序和验收进度见 [优化执行计划](./OPTIMIZATION_PLAN.md)。先推进数据可靠性、同步和迁移修复，再推进收件箱、搜索体验与知识检索。
+
 > 本文档跟踪 Curio 的**整体产品规划**。AI 相关能力有独立计划文档
 > [`AI_INTEGRATION_PLAN.md`](./AI_INTEGRATION_PLAN.md)（其中的"V1.0/V1.5/V2.0/V3.0"是 AI
 > 子阶段编号，与本路线图的 V 编号是两套体系，互不冲突）。
 >
 > 当前实际进展见 [version history](#当前进度速览-202605)。
 >
-> **进度速记**：V1.0 ✅、V1.5 ✅、V2.0 未开始、V3.0/AI 12/14 已交付。
+> **进度速记**：V1.0 ✅、V1.5 ✅、V2.0 配置准备完成，授权与同步待实现、V3.0/AI 12/14 已交付。
 > v0.22.x 收尾批：首次进入引导（Spotlight + 渐进式）/ 拖入链接快速添加 /
 > 浏览器书签自动同步 / 卡片标签编辑器 全部到位。
 
@@ -53,7 +55,7 @@
 ### 已实现
 - [x] 同步开关 + 状态卡片（数据管理弹窗内）
 - [x] 偏好同步（白名单：theme / layout / language / cardSize / cardIconSize / cardGlass / fontColor / backgroundBlur / subSectionDefaultExpanded / recentIncludeBrowserHistory）
-- [x] 书签数据同步（分类 + 卡片整包）：manifest + N chunks 原子写入
+- [x] 书签数据同步（分类 + 卡片整包）：manifest + N chunks 一次提交；读取时检查分片完整性
 - [x] 客户端配额预检 + 容量进度条（黄/红预警，超 100KB 拒写）
 - [x] storage.onChanged 实时双向同步 + 自回声防抖（lastPushTs 守门）
 - [x] 推 / 拉 / 整包覆盖 / 清空云端 四种手动操作
@@ -63,7 +65,7 @@
 
 ### 范围限制（设计取舍，不算 bug）
 - **不同步**：壁纸（体积可超配额）、侧栏宽度（与屏宽相关）、browserSync* 字段、AI 设置（含 apiKey，红线）
-- **整包 LWW**：两端同时改时后写覆盖先写，未推送的本地修改会丢失（UI 已警示）
+- **整包 LWW**：两端同时改时后写覆盖先写，已知两端冲突会暂停自动覆盖；远端到达延迟等并发场景仍未实现逐条合并
 - **配额 100KB 硬上限**：书签量大的重度用户会撞墙 → 由 V2.0 接管
 
 > 一种更轻量的"同步"始终保留：手动「导出 / 导入 JSON」（§3.3 / §3.4），
@@ -76,16 +78,19 @@
 **目标**：解决 V1.5 的两大限制：
 1. 跨浏览器互通（Chrome ↔ Firefox 没有共享的 storage.sync）
 2. 书签量超过 chrome.storage.sync 100KB 配额时的容灾出口
-**状态**：未开始
+**状态**：已选 Google Drive，配置入口与创建文档已交付；真实授权、上传和跨浏览器同步尚未实现。详见 [Google Drive 配置](./GOOGLE_DRIVE_SETUP.md)。
 
-### Free 套餐 - Google Drive
+### 本期方案 - Google Drive
+- [x] 公开客户端 ID 配置入口与 Chrome 构建配置
+- [x] OAuth 客户端创建步骤和跨浏览器接入边界
 - [ ] OAuth 登录（chrome.identity / launchWebAuthFlow）
 - [ ] DriveRepository 实现（复用 V1.5 已定义的 SyncProvider 接口）
 - [ ] appdata folder 隐藏存储（无 100KB 限制）
 - [ ] 增量同步 + 冲突合并（升级到 row-level LWW，按 entity.updatedAt）
-- [ ] 离线编辑队列
+- [x] 本地书签待同步版本持久保存，重启后续传（当前 storage.sync）
+- [ ] Drive 逐条离线编辑队列和删除标记
 
-### Pro 套餐 - Supabase
+### 备选储备 - Supabase（当前不实施）
 - [ ] Supabase 项目搭建
 - [ ] 账号系统（邮箱 + Google + GitHub）
 - [ ] 实时订阅（多端实时同步）
@@ -127,13 +132,15 @@
 ## 非功能性目标
 
 - [ ] 启动时间 < 100ms（当前未测量）
-- [ ] 单元测试覆盖率 > 70%（当前 0 —— 主要靠 TS 类型 + 手动测试，0.x 阶段优先功能）
+- [ ] 单元测试覆盖率 > 70%（已有 Vitest 回归测试，覆盖率需用 `pnpm test:coverage` 单独测量）
 - [ ] 包体积 < 500KB（含 Readability 与 dexie 后预计偏大，需测量；非阻塞）
 - [ ] Lighthouse 性能分 > 90
 
 ---
 
 ## 当前进度速览（2026-05）
+
+2026-09 本地优化进度见 [优化执行计划](./OPTIMIZATION_PLAN.md)，以下为此前的版本记录。
 
 ```
 v0.22.x  feat 首次进入引导（L1 5 步 Spotlight + L1.5 渐进式 + placeholder 轮换）

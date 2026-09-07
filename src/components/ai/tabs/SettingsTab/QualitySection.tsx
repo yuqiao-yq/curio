@@ -1,3 +1,4 @@
+import { requestSiteAccess } from '../../../../services/sitePermissions'
 import { useMemo, useState } from 'react'
 import { useBookmarkStore } from '../../../../stores/useBookmarkStore'
 import { useQualityStore } from '../../../../ai/services/useQualityStore'
@@ -49,16 +50,22 @@ export function QualitySection() {
 
   const [archiveCategoryId, setArchiveCategoryId] = useState<string>('')
   const flatCategories = useMemo(
-    () =>
-      categories
-        .filter((c) => !c.parentId)
-        .sort((a, b) => a.order - b.order),
+    () => categories.filter((c) => !c.parentId).sort((a, b) => a.order - b.order),
     [categories],
   )
 
   const running = stage === 'scanning' || stage === 'applying'
 
   const handleScan = async () => {
+    try {
+      if (!(await requestSiteAccess())) {
+        toast.info('未开始质检', '失效检测需要访问书签网站')
+        return
+      }
+    } catch (err) {
+      toast.error('权限申请失败', String(err))
+      return
+    }
     const controller = new AbortController()
     startScan(controller)
     try {
@@ -134,15 +141,12 @@ export function QualitySection() {
         if (!c) continue
         if (c.categoryId === archiveCategoryId) continue // 已经在了
         // 放到目标分类末尾
-        const targetCount = cards.filter(
-          (x) => x.categoryId === archiveCategoryId,
-        ).length
+        const targetCount = cards.filter((x) => x.categoryId === archiveCategoryId).length
         await moveCard(id, archiveCategoryId, targetCount)
         moved++
       }
       goDone()
-      const targetName =
-        categories.find((c) => c.id === archiveCategoryId)?.name ?? '?'
+      const targetName = categories.find((c) => c.id === archiveCategoryId)?.name ?? '?'
       toast.success('已归档', `${moved} 张卡片移到 ${targetName}`)
       reset()
     } catch (err) {
@@ -158,10 +162,9 @@ export function QualitySection() {
       </h4>
       <p className="text-[11px] text-slate-400 mb-2 leading-relaxed">
         扫描书签库找出三类问题：
-        <Color tone="red">🔴 失效</Color> ·{' '}
-        <Color tone="amber">🟡 重复</Color> ·{' '}
-        <Color tone="blue">🔵 长期未访问</Color>。
-        失效检测会发起 HEAD 请求；内容相似度基于已生成的 embedding。
+        <Color tone="red">🔴 失效</Color> · <Color tone="amber">🟡 重复</Color> ·{' '}
+        <Color tone="blue">🔵 长期未访问</Color>。 失效检测会发起 HEAD 请求；内容相似度基于已生成的
+        embedding。
       </p>
 
       {/* idle / done / error 时显示扫描入口 */}
@@ -172,9 +175,7 @@ export function QualitySection() {
             disabled={cards.length === 0}
             onClick={() => void handleScan()}
             title={
-              cards.length === 0
-                ? '没有书签可扫描'
-                : '开始全库质检（HEAD 请求 + embedding 比对）'
+              cards.length === 0 ? '没有书签可扫描' : '开始全库质检（HEAD 请求 + embedding 比对）'
             }
           >
             🩺 开始质检
@@ -191,11 +192,7 @@ export function QualitySection() {
       {stage === 'error' && (
         <div className="mt-2 rounded-md border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-2.5 py-1.5 text-[11px] text-red-600 dark:text-red-300 break-words">
           {errorMessage}
-          <button
-            type="button"
-            onClick={reset}
-            className="ml-2 underline hover:no-underline"
-          >
+          <button type="button" onClick={reset} className="ml-2 underline hover:no-underline">
             知道了
           </button>
         </div>
@@ -245,8 +242,7 @@ function ScanProgressBar({
   progress: { done: number; total: number }
   onCancel: () => void
 }) {
-  const pct =
-    progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0
+  const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0
   return (
     <div className="mt-2 rounded-md border border-brand/30 bg-brand/5 px-2.5 py-2 space-y-1.5">
       <div className="flex items-center justify-between text-[11px]">
@@ -256,10 +252,7 @@ function ScanProgressBar({
         </span>
       </div>
       <div className="h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
-        <div
-          className="h-full bg-brand transition-all duration-300"
-          style={{ width: `${pct}%` }}
-        />
+        <div className="h-full bg-brand transition-all duration-300" style={{ width: `${pct}%` }} />
       </div>
       <button
         type="button"
@@ -315,8 +308,11 @@ function QualityPreview({
       {/* 顶部：统计 + 全选 */}
       <div className="flex items-center gap-2 flex-wrap text-[11px]">
         <span>
-          已选 <span className="tabular-nums font-medium text-slate-700 dark:text-slate-200">{selected.size}</span> /{' '}
-          {allIds.length}
+          已选{' '}
+          <span className="tabular-nums font-medium text-slate-700 dark:text-slate-200">
+            {selected.size}
+          </span>{' '}
+          / {allIds.length}
         </span>
         <div className="flex-1" />
         <button
@@ -338,11 +334,7 @@ function QualityPreview({
 
       {/* 失效 */}
       {report.deadCards.length > 0 && (
-        <GroupBlock
-          title="🔴 失效"
-          tone="red"
-          count={report.deadCards.length}
-        >
+        <GroupBlock title="🔴 失效" tone="red" count={report.deadCards.length}>
           {report.deadCards.map((d) => (
             <CardRow
               key={d.card.id}
@@ -359,29 +351,16 @@ function QualityPreview({
 
       {/* 重复组 */}
       {report.duplicateGroups.length > 0 && (
-        <GroupBlock
-          title="🟡 疑似重复"
-          tone="amber"
-          count={report.duplicateGroups.length}
-        >
+        <GroupBlock title="🟡 疑似重复" tone="amber" count={report.duplicateGroups.length}>
           {report.duplicateGroups.map((g) => (
-            <DuplicateGroupRow
-              key={g.groupId}
-              group={g}
-              selected={selected}
-              onToggle={onToggle}
-            />
+            <DuplicateGroupRow key={g.groupId} group={g} selected={selected} onToggle={onToggle} />
           ))}
         </GroupBlock>
       )}
 
       {/* 长期未访问 */}
       {report.staleCards.length > 0 && (
-        <GroupBlock
-          title="🔵 长期未访问 (≥ 6 月)"
-          tone="blue"
-          count={report.staleCards.length}
-        >
+        <GroupBlock title="🔵 长期未访问 (≥ 6 月)" tone="blue" count={report.staleCards.length}>
           {report.staleCards.map((c) => (
             <CardRow
               key={c.id}
@@ -400,9 +379,7 @@ function QualityPreview({
       {report.deadCards.length === 0 &&
         report.duplicateGroups.length === 0 &&
         report.staleCards.length === 0 && (
-          <div className="text-slate-400 text-center py-4">
-            ✨ 全部通过，无需处理
-          </div>
+          <div className="text-slate-400 text-center py-4">✨ 全部通过，无需处理</div>
         )}
 
       {/* 底部操作 */}
@@ -592,21 +569,11 @@ function DuplicateGroupRow({
   )
 }
 
-function Color({
-  tone,
-  children,
-}: {
-  tone: 'red' | 'amber' | 'blue'
-  children: React.ReactNode
-}) {
+function Color({ tone, children }: { tone: 'red' | 'amber' | 'blue'; children: React.ReactNode }) {
   return (
     <span
       className={cn(
-        tone === 'red'
-          ? 'text-red-500'
-          : tone === 'amber'
-            ? 'text-amber-500'
-            : 'text-sky-500',
+        tone === 'red' ? 'text-red-500' : tone === 'amber' ? 'text-amber-500' : 'text-sky-500',
       )}
     >
       {children}

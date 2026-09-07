@@ -16,27 +16,20 @@ import type { BookmarkState, StoreGet, StoreSet } from '../types'
  *   - exportToBrowser      把本地数据镜像写到浏览器原生书签 + 回写 bookmarkId
  * ────────────────────────────────────────────────────────────────────── */
 
-type LifecycleSlice = Pick<
-  BookmarkState,
-  'init' | 'importFromBrowser' | 'exportToBrowser'
->
+type LifecycleSlice = Pick<BookmarkState, 'init' | 'importFromBrowser' | 'exportToBrowser'>
 
-export const createLifecycleSlice = (
-  set: StoreSet,
-  get: StoreGet,
-): LifecycleSlice => ({
+export const createLifecycleSlice = (set: StoreSet, get: StoreGet): LifecycleSlice => ({
   async init() {
     set({ loading: true })
     const repo = getRepository()
     const recentRepo = getRecentRepository()
-    const [categories, cards, recentEntries, recentLimit, settings] =
-      await Promise.all([
-        repo.getCategories(),
-        repo.getCards(),
-        recentRepo.loadEntries(),
-        recentRepo.loadLimit(),
-        repo.getSettings(),
-      ])
+    const [snapshot, recentEntries, recentLimit] = await Promise.all([
+      repo.bulkExport(),
+      recentRepo.loadEntries(),
+      recentRepo.loadLimit(),
+    ])
+    const { categories, cards } = snapshot
+    const settings = snapshot.settings ?? (await repo.getSettings())
     // 默认激活：排序第一的【顶层】分类（与用户在侧栏看到的"第一项"对齐）
     // categories 已按 order 排序，但可能子级与顶层混杂，需显式取顶层
     const firstTop = categories.find((c) => !c.parentId)
@@ -63,8 +56,7 @@ export const createLifecycleSlice = (
   async importFromBrowser() {
     set({ loading: true })
     try {
-      const { categories: imported, cards: importedCards } =
-        await importFromBrowserBookmarks()
+      const { categories: imported, cards: importedCards } = await importFromBrowserBookmarks()
       const repo = getRepository()
       const existingCats = await repo.getCategories()
       const existingCards = await repo.getCards()
@@ -89,16 +81,11 @@ export const createLifecycleSlice = (
         // 该 importedParent 在最终数据中对应的 parentId
         // - 顶层（importedParent 为 undefined）→ undefined
         // - 否则查 newIdToFinalId
-        const finalParent = importedParent
-          ? newIdToFinalId.get(importedParent)
-          : undefined
+        const finalParent = importedParent ? newIdToFinalId.get(importedParent) : undefined
 
         const siblings = importedByParent.get(importedParent ?? '') ?? []
-        const existingSiblings =
-          existingByParent.get(finalParent ?? '') ?? []
-        const existingByName = new Map(
-          existingSiblings.map((c) => [c.name, c]),
-        )
+        const existingSiblings = existingByParent.get(finalParent ?? '') ?? []
+        const existingByName = new Map(existingSiblings.map((c) => [c.name, c]))
 
         for (const newCat of siblings) {
           const hit = existingByName.get(newCat.name)
@@ -122,12 +109,8 @@ export const createLifecycleSlice = (
         ...card,
         categoryId: newIdToFinalId.get(card.categoryId) ?? card.categoryId,
       }))
-      const existingKey = new Set(
-        existingCards.map((c) => `${c.categoryId}::${c.url}`),
-      )
-      const cardsToAdd = remappedCards.filter(
-        (c) => !existingKey.has(`${c.categoryId}::${c.url}`),
-      )
+      const existingKey = new Set(existingCards.map((c) => `${c.categoryId}::${c.url}`))
+      const cardsToAdd = remappedCards.filter((c) => !existingKey.has(`${c.categoryId}::${c.url}`))
 
       // ─── 写入 ────────────────────────────────────────────────
       if (catsToCreate.length > 0) await repo.saveCategories(catsToCreate)

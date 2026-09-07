@@ -1,6 +1,6 @@
 # Privacy Policy / 隐私政策
 
-**Effective date / 生效日期**: 2026-06-09
+**Effective date / 生效日期**: 2026-09-07
 **Extension / 扩展名称**: Curio - Bookmark New Tab (`curio`)
 **Contact / 联系方式**: open an issue at <https://github.com/yuqiao-yq/curio/issues>
 
@@ -11,19 +11,21 @@
 ### 1. TL;DR
 
 Curio is a **local-first** new-tab bookmark organizer.
-**We do not collect, transmit, sell, or share any personal data.**
-Everything you do in Curio stays on your own device, with two clearly-bounded
-exceptions that **only run when you explicitly enable them** (Sync via your
-own browser account, and optional AI features with your own API key).
+The developers operate no data-collection server and do not sell your data.
+Curio stores your library locally. Optional browser sync sends selected data
+through your browser account; remote AI sends prompts directly to your selected
+provider. Content fetching, link checking, web search and external images contact
+the sites involved when you use those features.
 
 ### 2. What data does Curio handle?
 
-All data is stored **locally on your device** using browser-provided APIs:
+The local data stores are listed below. Opt-in sync and AI requests are described separately:
 
 | Data | Where it is stored | Who can read it |
 |------|--------------------|-----------------|
-| Bookmark cards, categories, tags, notes | `IndexedDB` on your device | Only you, in this browser profile |
-| User preferences (theme, layout, AI settings) | `chrome.storage.local` / `chrome.storage.sync` | Only you, in this browser profile |
+| Bookmark cards, categories, tags, notes | `browser.storage.local` | This browser profile; selected data may be synced when enabled |
+| Automatic backups (last 10 versions) | Local IndexedDB, `curio-backups` | This browser profile; includes library preferences, excludes AI API keys |
+| Preferences and AI configuration | `browser.storage.local`; a preference whitelist may use `storage.sync` | This browser profile and, for synced preferences, your browser account; AI configuration and keys are excluded from sync |
 | Cached page favicons | Browser `_favicon` cache | Only you, in this browser profile |
 | Optional: extracted webpage text (for AI search) | `IndexedDB` (table `pageContents`) | Only you, in this browser profile |
 | Recently visited entries (if "include history" is enabled) | Read on demand from `chrome.history`, **not copied or stored** | Only you, in this browser profile |
@@ -44,9 +46,11 @@ explicitly opt in.
 | `history` | **Opt-in.** Only used when you toggle "Include browser history" in the Recent module. We call `chrome.history.search` on demand to render recently visited pages; results are never copied off-device. |
 | `tabs` | Used by the toolbar popup's "Add current page" button to read the active tab's `title` and `url` so it can be saved as a new bookmark. |
 | `favicon` | Render bookmark site icons via the local `chrome-extension://EXT_ID/_favicon/` URL scheme, avoiding third-party favicon-fetching services. |
-| `host_permissions: <all_urls>` | **Opt-in.** Only used when you enable "Content fetching" in Settings. Curio then performs a plain `fetch` of the public HTML of bookmarks you have already saved, extracts readable text via Mozilla Readability, and stores the result **locally** in IndexedDB so AI search can find it. No cookies, no authentication headers, no uploads. You can disable this feature at any time and clear all cached content from Settings. |
+| Optional website access (`<all_urls>`) | **Requested at runtime.** AI provider setup requests access to the selected endpoint; content fetching and link checks request website access when invoked. Curio then performs a plain `fetch` of the public HTML of bookmarks you have already saved, extracts readable text via Mozilla Readability, and stores the result **locally** in IndexedDB so AI search can find it. Content fetching omits cookies and authentication headers. Extracted text is sent to your configured AI model only after you enable the separate page-content permission. You can disable this feature at any time and clear all cached content from Settings. |
 
 ### 4. Optional AI features
+
+The separate **Allow AI to use fetched page content** setting defaults to off. When off, indexing and retrieval use bookmark metadata without sending cached page text. When enabled, relevant text may be sent to your configured chat, embedding and summary endpoints. Revoking permission does not recall data already sent.
 
 Curio's AI features are **disabled by default**. If you choose to enable
 them, two distinct execution modes are available:
@@ -67,17 +71,17 @@ LLM provider you configure. Your API keys are stored locally via
 
 ### 5. Browser sync (`chrome.storage.sync`)
 
-Curio uses Chrome's built-in `chrome.storage.sync` to keep your preferences
-and bookmark structure in sync across browser profiles signed into the same
-Google account. This data is encrypted and synchronized **by Chrome
-itself**; Curio does not see, store, or transmit it. See
-<https://support.google.com/chrome/answer/165139> for details on how Google
-handles Chrome Sync data.
+When you enable browser sync, Curio writes bookmark structure and selected
+preferences to `browser.storage.sync`. Your browser handles transmission through
+its account service; the Curio developers do not receive a copy. Chrome and Firefox
+use separate sync services. AI configuration, API keys, fetched page content and
+local backups are excluded. Google Drive currently has a configuration entry only:
+no Drive authorization or upload runs in this version.
 
 ### 6. Data sharing and sale
 
-We do not sell, rent, trade, or otherwise share any data, because we do not
-collect or transmit any to begin with.
+The developers do not sell, rent or trade your data. Optional sync, AI and
+website requests send data to the services described above.
 
 ### 7. Children's privacy
 
@@ -92,8 +96,9 @@ repository's release notes.
 
 ### 9. Your rights
 
-Because all data lives locally on your device, you can erase it at any time
-by:
+You can manage local data using the following controls. Uninstalling removes
+local backups; it does not recall data previously sent to an AI provider or remove
+independent exports. Use Data → Sync to manage synced data separately.
 
 - Settings → "Clear local content cache" / "Reset preferences"
 - Removing the Curio extension from `chrome://extensions/`
@@ -106,17 +111,17 @@ by:
 ### 1. 一句话总结
 
 Curio 是一个**本地优先**的新标签页书签整理工具。
-**我们不收集、不上传、不出售、不分享任何个人数据。**
-你的所有数据都保留在自己的设备上。只有两类例外功能会与外部交互，并且**仅在你主动开启后才会运行**：浏览器账号同步（由 Chrome 自己加密同步）和可选 AI 功能（使用你自己提供的 API Key）。
+开发者没有数据收集服务器，也不出售你的数据。书签库默认保存在本地。启用浏览器同步后，指定数据经浏览器账号服务传输；使用远程 AI 时，请求直接发送给你选择的服务商。使用网页抓取、失效检测、网络搜索或外部图片时，也会连接相关网站。
 
 ### 2. Curio 会处理哪些数据？
 
-所有数据都通过浏览器原生 API 存储在**你本机**：
+本地数据的存储方式如下；可选同步和 AI 请求另见后文：
 
 | 数据 | 存储位置 | 谁能读取 |
 |------|----------|----------|
-| 书签卡片、分类、标签、备注 | 本机 `IndexedDB` | 仅当前浏览器配置下的你 |
-| 用户偏好（主题、布局、AI 设置） | `chrome.storage.local` / `chrome.storage.sync` | 仅当前浏览器配置下的你 |
+| 书签卡片、分类、标签、备注 | `browser.storage.local` | 当前浏览器配置；启用同步后可传给浏览器账号服务 |
+| 自动备份（最近 10 个版本） | 本机 IndexedDB：`curio-backups` | 当前浏览器配置；包含书签偏好，不含 AI API Key |
+| 用户偏好与 AI 配置 | `browser.storage.local`；偏好白名单可写入 `storage.sync` | 当前浏览器配置及已启用的浏览器账号；AI 配置和密钥不参与同步 |
 | 网站 favicon 缓存 | 浏览器内置 `_favicon` 缓存 | 仅当前浏览器配置下的你 |
 | 可选：网页正文（供 AI 搜索使用） | 本机 `IndexedDB`（`pageContents` 表） | 仅当前浏览器配置下的你 |
 | 浏览历史条目（仅在开启「包含浏览历史」时） | 按需通过 `chrome.history` 读取，**不复制、不持久化** | 仅当前浏览器配置下的你 |
@@ -132,9 +137,11 @@ Curio 是一个**本地优先**的新标签页书签整理工具。
 | `history` | **需主动开启**。仅当你在「最近使用」模块勾选「包含浏览历史」时使用，调用 `chrome.history.search` 按需读取，**结果不会被复制或上传**。 |
 | `tabs` | 工具栏 popup 的「添加当前页面」按钮用来读取当前 tab 的 `title` 和 `url`，以便快速保存为书签。 |
 | `favicon` | 通过 `chrome-extension://EXT_ID/_favicon/` 在本地渲染网站图标，避免向第三方 favicon 服务发请求。 |
-| `host_permissions: <all_urls>` | **需主动开启**。仅当你在「设置」中开启「内容抓取」时使用：对你**已收藏的书签** URL 发起公共 `fetch` 请求，借助 Mozilla Readability 抽取正文，结果仅写入**本地** IndexedDB 供 AI 搜索使用。**不会**携带 cookie、不会带 Authorization 头、不会上传任何数据。你可以在「设置」中随时关闭并清空所有抓取过的内容。 |
+| Optional website access (`<all_urls>`) | **运行时申请**。添加/测试 AI 模型时申请对应端点，内容抓取与失效检测时申请网站访问。内容抓取：对你**已收藏的书签** URL 发起公共 `fetch` 请求，借助 Mozilla Readability 抽取正文，结果仅写入**本地** IndexedDB 供 AI 搜索使用。抓取请求**不会**携带 cookie 或 Authorization 头；另行开启「允许 AI 使用已抓取正文」后，正文片段可发送给你配置的模型。你可以在「设置」中随时关闭并清空所有抓取过的内容。 |
 
 ### 4. 可选的 AI 功能
+
+「允许 AI 使用已抓取正文」默认关闭。关闭时不向模型发送已抓取正文；开启后可把相关片段发送给所配置的对话、摘要和向量模型。撤回许可不会撤回已发送的数据。删除、导入与覆盖前的自动备份仅保存在本地 IndexedDB，不含 API Key，保留最近 10 个版本。
 
 Curio 的 AI 功能**默认完全关闭**。开启后有两种独立运行模式：
 
@@ -145,11 +152,11 @@ Curio 的 AI 功能**默认完全关闭**。开启后有两种独立运行模式
 
 ### 5. 浏览器账号同步（`chrome.storage.sync`）
 
-Curio 使用 Chrome 内置的 `chrome.storage.sync` 在同一 Google 账号下的多个浏览器配置之间同步偏好和书签结构。该过程的**加密与同步由 Chrome 自身完成**，Curio 不接触、不存储、不上传该数据。详见 <https://support.google.com/chrome/answer/165139>。
+开启同步后，Curio 把书签结构和偏好白名单写入 `browser.storage.sync`，浏览器通过其账号服务传输，Curio 开发者不接收副本。Chrome 与 Firefox 使用各自独立的同步服务。AI 配置、API Key、抓取正文和本地备份不参与同步。Google Drive 目前只有配置入口，本版本尚未执行 Drive 授权或上传。
 
 ### 6. 数据共享与销售
 
-我们**不**销售、出租、交易或分享任何数据 —— 因为我们根本不收集、不上传任何数据。
+开发者不销售、出租或交易你的数据。可选同步、AI 与网站访问会按上述说明把相关请求发送给所选服务。
 
 ### 7. 儿童隐私
 
@@ -161,7 +168,7 @@ Curio 不面向 13 岁以下儿童。我们不会有意收集任何人的数据�
 
 ### 9. 你的权利
 
-所有数据都在你本机，你可以随时彻底清除：
+你可以通过下列入口管理本地数据。卸载会删除本地备份，但不会撤回已经发送给 AI 服务商的数据，也不会删除独立导出的文件。浏览器同步数据需在「数据管理 → 同步」中单独管理。
 
 - 设置 → 「清除本地内容缓存」/「重置偏好」
 - 在 `chrome://extensions/` 移除 Curio 扩展

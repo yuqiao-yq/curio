@@ -1,15 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useAIPanelStore } from '../../../ai/panel/usePanelStore'
-import {
-  useAISettingsStore,
-  useIsAIConfigured,
-} from '../../../ai/useAISettingsStore'
-import {
-  runChat,
-  runRagChat,
-  suggestChatTitle,
-} from '../../../ai/services/chatter'
+import { useAISettingsStore, useIsAIConfigured } from '../../../ai/useAISettingsStore'
+import { runChat, runRagChat, suggestChatTitle } from '../../../ai/services/chatter'
 import type { RetrievedDoc } from '../../../ai/services/retriever'
 import type { ChatMessage } from '../../../ai/types'
 import { useBookmarkStore } from '../../../stores/useBookmarkStore'
@@ -27,6 +20,7 @@ interface StoredRef {
   title: string
   url: string
   score: number
+  excerpt?: string
 }
 interface StoredMessage extends ChatMessage {
   retrieved?: StoredRef[]
@@ -150,6 +144,7 @@ export function ChatTab({ tabId }: { tabId: string }) {
             title: d.card.title,
             url: d.card.url,
             score: d.score,
+            excerpt: d.excerpt,
           })),
         }
         updateMessages([...nextMessages, final])
@@ -185,6 +180,7 @@ export function ChatTab({ tabId }: { tabId: string }) {
                   title: d.card.title,
                   url: d.card.url,
                   score: d.score,
+                  excerpt: d.excerpt,
                 }))
               : undefined,
           }
@@ -265,9 +261,7 @@ export function ChatTab({ tabId }: { tabId: string }) {
     const a = document.createElement('a')
     const safeTitle = (tab?.title ?? 'chat').replace(/[\\/:*?"<>|]/g, '_')
     a.href = url
-    a.download = `curio-${safeTitle}-${new Date()
-      .toISOString()
-      .slice(0, 10)}.md`
+    a.download = `curio-${safeTitle}-${new Date().toISOString().slice(0, 10)}.md`
     a.click()
     URL.revokeObjectURL(url)
     toast.success('已导出', `${messages.length} 条消息`)
@@ -285,14 +279,11 @@ export function ChatTab({ tabId }: { tabId: string }) {
   const remoteProviders = providers.filter((p) => p.type !== 'window-ai')
   const switchToRemote = (providerId: string) => {
     setRoute('chat', providerId)
-    toast.success(
-      '已切换 chat 路由',
-      providers.find((p) => p.id === providerId)?.name ?? '',
-    )
+    toast.success('已切换 chat 路由', providers.find((p) => p.id === providerId)?.name ?? '')
   }
 
-  // 是否有任何已抓取正文（决定 RAG 开关 disabled 与否）
-  const hasIndexed = indexedIds.size > 0
+  // 关键词检索只需要书签；抓取正文和正文使用许可均为可选。
+  const ragAvailable = cards.length > 0
 
   return (
     <div className="flex flex-col h-full">
@@ -303,7 +294,7 @@ export function ChatTab({ tabId }: { tabId: string }) {
         onClear={() => void handleClear()}
         onExport={handleExport}
         ragEnabled={ragEnabled}
-        ragAvailable={hasIndexed}
+        ragAvailable={ragAvailable}
         onToggleRag={setRagEnabled}
         indexedCount={indexedIds.size}
       />
@@ -449,7 +440,7 @@ function ChatHeader({
         {modelName ?? '(未配置)'}
       </span>
 
-      {/* RAG 开关：仅当已索引内容 > 0 时可启用；hover 显示数量 */}
+      {/* 有书签即可使用关键词检索；向量与正文增强均为可选。 */}
       <button
         type="button"
         onClick={() => onToggleRag(!ragEnabled)}
@@ -457,9 +448,9 @@ function ChatHeader({
         title={
           ragAvailable
             ? ragEnabled
-              ? `已开启「问问我的书签库」（${indexedCount} 个网页已索引）`
-              : `开启「问问我的书签库」（${indexedCount} 个网页已索引）`
-            : '请先在「⚙ 设置 → 内容抓取」抓取一些网页正文'
+              ? `已开启「问问我的书签库」（${indexedCount} 个网页已抓取，正文是否用于回答取决于 AI 正文开关）`
+              : `开启「问问我的书签库」（${indexedCount} 个网页已抓取，正文是否用于回答取决于 AI 正文开关）`
+            : '请先收藏一些书签'
         }
         className={cn(
           'inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10px] font-medium',
@@ -583,10 +574,10 @@ function EmptyHint() {
         <span className="inline-flex items-center gap-0.5 px-1 rounded bg-fuchsia-100 dark:bg-fuchsia-500/20 text-fuchsia-700 dark:text-fuchsia-300 font-medium">
           📚 RAG
         </span>{' '}
-        后，AI 会基于你已抓取过的网页正文回答，并附上 [1] [2] 引用来源。
+        后，AI 会检索你的书签信息，并附上 [1] [2] 引用来源。
         <br />
         <span className="text-[10px] text-slate-300 dark:text-slate-600">
-          先在「⚙ 设置 → 内容抓取」抓些网页正文，RAG 模式才会被启用
+          如需基于网页正文回答，请先抓取内容，并在 AI 设置中允许使用正文。
         </span>
       </p>
     </div>
@@ -609,12 +600,7 @@ function Bubble({
   if (role === 'system') return null
   const isUser = role === 'user'
   return (
-    <div
-      className={cn(
-        'group flex gap-2',
-        isUser ? 'justify-end' : 'justify-start',
-      )}
-    >
+    <div className={cn('group flex gap-2', isUser ? 'justify-end' : 'justify-start')}>
       {!isUser && (
         <span
           className={cn(
@@ -627,10 +613,7 @@ function Bubble({
         </span>
       )}
       <div
-        className={cn(
-          'max-w-[85%] flex flex-col gap-1.5',
-          isUser ? 'items-end' : 'items-start',
-        )}
+        className={cn('max-w-[85%] flex flex-col gap-1.5', isUser ? 'items-end' : 'items-start')}
       >
         <div
           className={cn(
@@ -648,7 +631,27 @@ function Bubble({
         </div>
         {/* RAG 引用列表：紧贴消息气泡下方 */}
         {!isUser && retrieved && retrieved.length > 0 && (
-          <ReferencesList refs={retrieved} />
+          <>
+            <ReferencesList refs={retrieved} />
+            {retrieved.some((r) => r.excerpt) && (
+              <details className="mt-2 text-xs text-slate-500">
+                <summary className="cursor-pointer">查看引用片段</summary>
+                {retrieved.map(
+                  (r, i) =>
+                    r.excerpt && (
+                      <blockquote
+                        key={r.id}
+                        className="mt-2 pl-2 border-l-2 border-brand/30 whitespace-pre-wrap"
+                      >
+                        [{i + 1}] {r.title}
+                        <br />
+                        {r.excerpt}
+                      </blockquote>
+                    ),
+                )}
+              </details>
+            )}
+          </>
         )}
       </div>
       {!isUser && onCopy && !streaming && (
@@ -702,12 +705,8 @@ function ReferencesList({ refs }: { refs: StoredRef[] }) {
           )}
           title={r.url}
         >
-          <span className="shrink-0 text-fuchsia-500 tabular-nums">
-            [{i + 1}]
-          </span>
-          <span className="truncate flex-1 group-hover/ref:underline">
-            {r.title}
-          </span>
+          <span className="shrink-0 text-fuchsia-500 tabular-nums">[{i + 1}]</span>
+          <span className="truncate flex-1 group-hover/ref:underline">{r.title}</span>
           <span className="shrink-0 text-[10px] text-slate-400 tabular-nums">
             {Math.round(r.score * 100)}%
           </span>
@@ -735,9 +734,7 @@ function RichText({ content }: { content: string }) {
               'border border-slate-700',
             )}
           >
-            {p.lang && (
-              <div className="text-[10px] text-slate-400 mb-1">{p.lang}</div>
-            )}
+            {p.lang && <div className="text-[10px] text-slate-400 mb-1">{p.lang}</div>}
             <code>{p.text}</code>
           </pre>
         ) : (

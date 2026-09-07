@@ -1,28 +1,15 @@
+import { COLLECTION_LABELS, type CollectionView } from '../../utils/collections'
 import { useState } from 'react'
-import {
-  DndContext,
-  closestCenter,
-} from '@dnd-kit/core'
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
+import { DndContext, closestCenter } from '@dnd-kit/core'
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import type { Category } from '../../types/bookmark'
-import {
-  SIDEBAR_WIDTH_MAX,
-  SIDEBAR_WIDTH_MIN,
-} from '../../types/bookmark'
+import { SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_MIN } from '../../types/bookmark'
 import { useBookmarkStore } from '../../stores/useBookmarkStore'
 import { collectDescendantIds } from '../../stores/useBookmarkStore/helpers'
 import { cn } from '../../utils/cn'
 import { confirmDialog, promptDialog } from '../Dialog'
 import { IconView } from '../../utils/icon'
-import {
-  BulkSelectIcon,
-  CategoriesIcon,
-  CollapseAllIcon,
-  ExpandAllIcon,
-} from './icons'
+import { BulkSelectIcon, CategoriesIcon, CollapseAllIcon, ExpandAllIcon } from './icons'
 import { SidebarStatsHint } from './SidebarStatsHint'
 import { SortableSidebarRow } from './SortableSidebarRow'
 import { useSidebarWidth } from './hooks/useSidebarWidth'
@@ -43,6 +30,8 @@ import { useSidebarDnd } from './hooks/useSidebarDnd'
  * ────────────────────────────────────────────────────────────────────── */
 
 export function CategorySidebar() {
+  const collectionView = useBookmarkStore((s) => s.collectionView)
+  const setCollectionView = useBookmarkStore((s) => s.setCollectionView)
   const categories = useBookmarkStore((s) => s.categories)
   const cards = useBookmarkStore((s) => s.cards)
   const activeId = useBookmarkStore((s) => s.activeCategoryId)
@@ -64,11 +53,13 @@ export function CategorySidebar() {
   // 过渡期间显示彩光
   const [animating, setAnimating] = useState(false)
 
-  const { sidebarWidth, resizing, handleResizeStart, handleResizeReset } =
-    useSidebarWidth(savedSidebarWidth, collapsed, updateSettings)
+  const { sidebarWidth, resizing, handleResizeStart, handleResizeReset } = useSidebarWidth(
+    savedSidebarWidth,
+    collapsed,
+    updateSettings,
+  )
 
-  const { expanded, toggleExpand, expand, collapseAll, expandIds } =
-    useExpandTree()
+  const { expanded, toggleExpand, expand, collapseAll, expandIds } = useExpandTree()
 
   const {
     selectMode,
@@ -81,17 +72,18 @@ export function CategorySidebar() {
     toggleSelectAll,
   } = useSelectMode(categories, expandIds)
 
-  const { sensors, overInfo, handleDragMove, handleDragEnd, handleDragCancel } =
-    useSidebarDnd(categories, moveCategory, expand)
+  const { sensors, overInfo, handleDragMove, handleDragEnd, handleDragCancel } = useSidebarDnd(
+    categories,
+    moveCategory,
+    expand,
+  )
 
   const handleToggle = () => {
     setAnimating(true)
     setCollapsed((v) => !v)
   }
 
-  const topLevel = categories
-    .filter((c) => !c.parentId)
-    .sort((a, b) => a.order - b.order)
+  const topLevel = categories.filter((c) => !c.parentId).sort((a, b) => a.order - b.order)
 
   const childrenOf = (id: string) =>
     categories.filter((c) => c.parentId === id).sort((a, b) => a.order - b.order)
@@ -127,8 +119,7 @@ export function CategorySidebar() {
     setEditingName(name)
   }
   const commitEdit = async () => {
-    if (editingId && editingName.trim())
-      await renameCategory(editingId, editingName.trim())
+    if (editingId && editingName.trim()) await renameCategory(editingId, editingName.trim())
     setEditingId(null)
   }
 
@@ -154,34 +145,25 @@ export function CategorySidebar() {
     .filter((c) => categories.some((x) => x.parentId === c.id))
     .map((c) => c.id)
   const hasAnyChildren = allParentIds.length > 0
-  const allExpanded =
-    hasAnyChildren && allParentIds.every((id) => expanded.has(id))
+  const allExpanded = hasAnyChildren && allParentIds.every((id) => expanded.has(id))
 
   // 选择 / 重命名 模式下禁用拖拽，避免冲突
   const dragDisabled = selectMode || editingId !== null
 
   /** 渲染某父级下的兄弟节点列表（每层一个 SortableContext） */
-  const renderSiblings = (
-    parentId: string | undefined,
-    depth: number,
-  ): JSX.Element => {
+  const renderSiblings = (parentId: string | undefined, depth: number): JSX.Element => {
     const siblings = categories
       .filter((c) => (c.parentId ?? '') === (parentId ?? ''))
       .sort((a, b) => a.order - b.order)
     return (
-      <SortableContext
-        items={siblings.map((c) => c.id)}
-        strategy={verticalListSortingStrategy}
-      >
+      <SortableContext items={siblings.map((c) => c.id)} strategy={verticalListSortingStrategy}>
         {siblings.map((cat) => (
           <SortableSidebarRow
             key={cat.id}
             cat={cat}
             depth={depth}
             disabled={dragDisabled}
-            dropIndicator={
-              overInfo && overInfo.id === cat.id ? overInfo.position : null
-            }
+            dropIndicator={overInfo && overInfo.id === cat.id ? overInfo.position : null}
             renderChildren={() => renderSiblings(cat.id, depth + 1)}
             activeId={activeId}
             selectMode={selectMode}
@@ -256,8 +238,7 @@ export function CategorySidebar() {
         <div className="flex flex-col gap-1 mt-1">
           {topLevel.slice(0, 6).map((cat) => {
             const inActivePath =
-              activeId === cat.id ||
-              collectDescendantIds([cat.id], categories).has(activeId ?? '')
+              activeId === cat.id || collectDescendantIds([cat.id], categories).has(activeId ?? '')
             return (
               <button
                 key={cat.id}
@@ -297,18 +278,35 @@ export function CategorySidebar() {
             : 'opacity-100 duration-200 delay-150',
         )}
       >
+        {!selectMode && (
+          <nav aria-label="智能视图" className="mb-3 flex flex-wrap gap-1">
+            {(Object.entries(COLLECTION_LABELS) as [CollectionView, string][]).map(
+              ([view, label]) => (
+                <button
+                  key={view}
+                  type="button"
+                  aria-pressed={collectionView === view}
+                  className={cn(
+                    'text-xs px-2 py-1.5 rounded',
+                    collectionView === view
+                      ? 'bg-brand/10 text-brand'
+                      : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800',
+                  )}
+                  onClick={() => setCollectionView(view)}
+                >
+                  {label}
+                </button>
+              ),
+            )}
+          </nav>
+        )}
         {/* Header */}
         <div className="flex items-center justify-between px-2 mb-2 h-7">
           {selectMode ? (
             <>
-              <span className="text-xs font-semibold text-brand">
-                已选 {selectedIds.size}
-              </span>
+              <span className="text-xs font-semibold text-brand">已选 {selectedIds.size}</span>
               <div className="flex items-center gap-0.5">
-                <button
-                  onClick={toggleSelectAll}
-                  className="btn-ghost !p-1 text-xs"
-                >
+                <button onClick={toggleSelectAll} className="btn-ghost !p-1 text-xs">
                   {allSelected ? '✕全' : '✓全'}
                 </button>
                 <button
@@ -323,20 +321,14 @@ export function CategorySidebar() {
                 >
                   🗑
                 </button>
-                <button
-                  onClick={exitSelectMode}
-                  className="btn-ghost !p-1 text-xs"
-                >
+                <button onClick={exitSelectMode} className="btn-ghost !p-1 text-xs">
                   完成
                 </button>
               </div>
             </>
           ) : (
             <>
-              <h2
-                className="flex items-center justify-center w-6 h-6 text-slate-500"
-                title="分类"
-              >
+              <h2 className="flex items-center justify-center w-6 h-6 text-slate-500" title="分类">
                 <CategoriesIcon />
                 <span className="sr-only">分类</span>
               </h2>
@@ -449,9 +441,7 @@ export function CategorySidebar() {
             className={cn(
               'mx-auto h-full w-[2px] rounded-full',
               'transition-colors duration-150',
-              resizing
-                ? 'bg-brand'
-                : 'bg-transparent group-hover/resize:bg-brand/60',
+              resizing ? 'bg-brand' : 'bg-transparent group-hover/resize:bg-brand/60',
             )}
           />
         </div>

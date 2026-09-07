@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { browser } from 'wxt/browser'
+import { toast } from '../stores/useToastStore'
 import { useBookmarkStore } from '../stores/useBookmarkStore'
 import type { BrowserHistoryItem } from '../stores/useBookmarkStore'
 import type { BookmarkCard } from '../types/bookmark'
@@ -39,9 +41,7 @@ export function RecentSection() {
   const clearRecent = useBookmarkStore((s) => s.clearRecent)
   const cards = useBookmarkStore((s) => s.cards)
 
-  const includeHistory = useBookmarkStore(
-    (s) => !!s.settings.recentIncludeBrowserHistory,
-  )
+  const includeHistory = useBookmarkStore((s) => !!s.settings.recentIncludeBrowserHistory)
   const browserHistoryItems = useBookmarkStore((s) => s.browserHistoryItems)
   const updateSettings = useBookmarkStore((s) => s.updateSettings)
   const loadBrowserHistory = useBookmarkStore((s) => s.loadBrowserHistory)
@@ -139,6 +139,15 @@ export function RecentSection() {
         confirmText: '开启',
       })
       if (!ok) return
+      try {
+        if (!(await browser.permissions.request({ permissions: ['history'] }))) {
+          toast.info('未开启浏览器历史', '未授予读取权限，书签功能不受影响')
+          return
+        }
+      } catch {
+        toast.error('无法申请历史权限', '请检查浏览器的扩展权限设置')
+        return
+      }
     }
     await updateSettings({ recentIncludeBrowserHistory: !includeHistory })
   }
@@ -190,9 +199,7 @@ export function RecentSection() {
                   'opacity-0 group-hover/sec:opacity-100 focus-visible:opacity-100',
           )}
           title={
-            includeHistory
-              ? '已合并浏览器历史，点击关闭'
-              : '点击开启：把浏览器全局历史也合并进来'
+            includeHistory ? '已合并浏览器历史，点击关闭' : '点击开启：把浏览器全局历史也合并进来'
           }
         >
           <HistoryIcon />
@@ -246,22 +253,19 @@ export function RecentSection() {
                 cardCustomWidthMax,
               })
               return (
-            <div className={grid.className} style={grid.style}>
-              {visibleItems.map((it) =>
-                it.kind === 'bookmark' ? (
-                  <BookmarkCardItem
-                    key={`recent-bm-${it.card.id}`}
-                    card={it.card}
-                    draggable={false}
-                  />
-                ) : (
-                  <HistoryCardItem
-                    key={`recent-hist-${it.item.url}`}
-                    item={it.item}
-                  />
-                ),
-              )}
-            </div>
+                <div className={grid.className} style={grid.style}>
+                  {visibleItems.map((it) =>
+                    it.kind === 'bookmark' ? (
+                      <BookmarkCardItem
+                        key={`recent-bm-${it.card.id}`}
+                        card={it.card}
+                        draggable={false}
+                      />
+                    ) : (
+                      <HistoryCardItem key={`recent-hist-${it.item.url}`} item={it.item} />
+                    ),
+                  )}
+                </div>
               )
             })()
           ) : (

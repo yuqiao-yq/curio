@@ -4,6 +4,21 @@
 
 ---
 
+## 当前实现补充（2026-09-07）
+
+- `LocalRepository` 的修改在扩展 origin 共享的 Web Lock 内执行，保护整数组读改写；页面通知与书签待同步版本和数据在同一次 storage.local.set 中提交，Popup 和新标签页刷新数据并保留当前分类与搜索。
+- 删除、合并/替换导入、远端覆盖前，把书签/分类/设置快照写入 `curio-backups` IndexedDB，保留最近 10 个版本。备份失败阻止破坏性操作；API Key 不进入快照。
+- `storage.sync` 分块按 UTF-8 与 JSON 转义后的字节预算切割；写前检查当前存储占用；新版 manifest 带内容校验值。缺块/损坏不是空库，启动时不得反向覆盖。跨设备到达不承诺事务原子性，监听 manifest 与 chunk 变化后重新验证。
+- 首次启用浏览器同步合并已有远端；后续仍是整包覆盖。网络类失败在页面存活期间最多重试 3 次（5 / 10 / 20 秒）；`curio:bookmarks-sync-state` 保存待同步版本，重启后续传，确认旧请求不会清掉新编辑。已知两端冲突时暂停自动覆盖。逐条操作队列与实体删除标记尚未实现。
+- `commitReceivedBookmarks` 在本机同步锁内备份、落盘，再推进接收游标；远端读取不再提前确认。自动接收在本地写锁内检查待同步状态，显式云端覆盖才允许丢弃本地待同步版本。偏好/书签推送、清空共享同步锁，避免本机回声与写入竞态。
+- 收件箱使用固定分类 ID `curio:inbox`，首次收藏时在写锁内创建；智能视图仅筛选现有卡片，不复制数据。
+- 虚拟网格统一采用 `@tanstack/react-virtual`，当前只用于扁平搜索/智能视图，60 条起启用；通过 scrollMargin 处理前方标题/模块高度变化。分类拖拽区域尚未虚拟化。
+- RAG 采用书签级向量与本地段落关键词的排名融合；正文片段记录偏移并在聊天引用中可展开。段落向量索引尚未实现。
+- `privacy.sendPageContent` 缺省为 false。抓取只写本机；用户开启该开关后，正文可用于配置的模型端点。网站与 history 权限改为按操作申请。
+- Google Drive 当前只交付配置入口和构建时 OAuth 声明，真实授权与两浏览器同步未交付。详见 [接入说明](GOOGLE_DRIVE_SETUP.md)。
+
+下面章节包含产品原始设计，若与本节不一致，以本节和代码为准。
+
 ## 1. 产品定位
 
 - **核心场景**：用户打开新标签页时，看到的不是默认页面，而是自己整理好的、分类清晰的书签卡片墙。
@@ -19,7 +34,7 @@
 
 | 层 | 技术 | 选型理由 |
 |---|---|---|
-| 扩展规范 | **Manifest V3 + WebExtension API** | Chrome / Edge 强制 MV3，Firefox 已兼容，可一套代码多浏览器 |
+| 扩展规范 | **WebExtension API** | Chrome / Edge 构建为 MV3，Firefox 当前构建为 MV2 |
 | 脚手架 | **WXT** | 跨浏览器、自动生成 manifest、内置 HMR、零配置 |
 | 框架 | **React 18 + TypeScript** | 生态最全，组件库丰富，类型安全 |
 | 构建 | **Vite**（WXT 内置） | 快、HMR 体验好 |
@@ -29,7 +44,7 @@
 | 本地存储 | **chrome.storage.local + Dexie (IndexedDB)** | storage 存元数据，IndexedDB 存大数据（缩略图等） |
 | 浏览器 API | **chrome.bookmarks / chrome.storage / favicon** | 原生书签读取与图标获取 |
 | 同浏览器多设备同步（V1.5 已交付） | **chrome.storage.sync** | 同一浏览器账号下零成本同步偏好 + 全部书签（manifest + 分块） |
-| 跨浏览器同步（V2 规划） | **Google Drive (appdata) + Supabase 双轨** | 突破 100KB 配额；免费用户走 Drive，Pro 走 Supabase 实时同步 |
+| 跨浏览器同步（V2 规划） | **Google Drive (appdata)** | 已选方案，配置入口已提供；授权与数据同步待实现，Supabase 保留为备选 |
 | 跨浏览器兼容 | **webextension-polyfill** | 抹平 chrome.* 与 browser.* 差异 |
 
 ---
@@ -122,7 +137,7 @@ interface UserSettings {
   language: 'zh-CN' | 'en'
 
   // ── 卡片尺寸（v0.21.19 起从 sm/md/lg 改成 compact/standard/large） ──
-  cardSize: 'compact' | 'standard' | 'large'
+  cardSize: 'compact' | 'standard' | 'custom'
   cardIconSize?: 'small' | 'standard'
   cardGlass?: boolean              // 卡片毛玻璃开关（v0.21.18+）
 
@@ -215,9 +230,9 @@ interface BookmarkRepository {
    - **黑名单**：壁纸（可超配额）、侧栏宽度（设备相关）、`browserSync*`（本机偏好）、
      **AI 设置含 apiKey（隐私红线）**
 2. **书签管线**（`KEY_BM_MANIFEST` + N 个 `KEY_BM_CHUNK_PREFIX{i}`）
-   - 整包 categories + cards 序列化后按 8KB 切片，分块写入 +
+   - 整包 categories + cards 序列化后按 JSON 编码字节预算切片（每块 ≤ 7,000 字节，另计 key），分块写入 +
      一份 manifest 描述总块数 / 字节数 / `updatedAt`
-   - 所有块和 manifest 在**同一次 `storage.sync.set`** 里原子提交
+   - 所有块和 manifest 在**同一次 `storage.sync.set`** 里提交；接收方仍需校验完整性，不能假设跨设备原子到达
    - 推送时若新版本块数少于旧版，会清理多余的 stale chunks
 
 **关键不变量：**
@@ -295,7 +310,7 @@ interface SyncMeta {
 
 ## 9. 性能考量
 
-- 卡片虚拟滚动（卡片 > 200 时启用 `react-virtuoso`）
+- 搜索与智能视图虚拟滚动（卡片 ≥ 60 时启用 `@tanstack/react-virtual`）
 - favicon 本地缓存（避免每次重新请求）
 - 拖拽用 CSS transform，避免触发布局
 - 启动时间目标：**< 100ms 首屏**

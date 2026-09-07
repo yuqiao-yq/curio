@@ -11,10 +11,7 @@ import { createTagsSlice } from './slices/tagsSlice'
 import { createRecentSlice } from './slices/recentSlice'
 import { createSettingsSlice } from './slices/settingsSlice'
 import { createSyncSlice } from './slices/syncSlice'
-import {
-  installFlushHandlers,
-  scheduleBookmarksSyncPush,
-} from './scheduler'
+import { installFlushHandlers, scheduleBookmarksSyncPush } from './scheduler'
 
 /* ──────────────────────────────────────────────────────────────────────
  * 主书签 store：装配壳。
@@ -37,16 +34,17 @@ export type { BrowserHistoryItem, RecentEntry } from './types'
 export { DEFAULT_RECENT_LIMIT }
 
 // 调度器公开 API 透传（兼容老的导入路径）
-export {
-  flushPendingSyncPush,
-  cancelPendingSyncPush,
-} from './scheduler'
+export { flushPendingSyncPush, cancelPendingSyncPush } from './scheduler'
 
 export const useBookmarkStore = create<BookmarkState>((set, get) => ({
   // ─── initial state ──────────────────────────
   categories: [],
   cards: [],
   activeCategoryId: null,
+  collectionView: null,
+  setCollectionView(view) {
+    set({ collectionView: view, searchKeyword: '' })
+  },
   searchKeyword: '',
   loading: false,
   initialized: false,
@@ -57,7 +55,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
 
   // ─── trivial selectors ──────────────────────
   setActiveCategory(id) {
-    set({ activeCategoryId: id })
+    set({ activeCategoryId: id, collectionView: null })
   },
   setSearchKeyword(kw) {
     set({ searchKeyword: kw })

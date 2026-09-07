@@ -1,3 +1,4 @@
+import type { CollectionView } from '../../utils/collections'
 import type { BookmarkCard, Category, UserSettings } from '../../types/bookmark'
 import type { BrowserHistoryItem, RecentEntry } from '../../types/recent'
 import type { ExportOptions, ExportResult } from '../../services/bookmarkExporter'
@@ -20,6 +21,8 @@ export interface BookmarkState {
   // ─── data ───────────────────────────────
   categories: Category[]
   cards: BookmarkCard[]
+  collectionView: CollectionView | null
+  setCollectionView: (view: CollectionView | null) => void
   activeCategoryId: string | null
   searchKeyword: string
   loading: boolean
@@ -71,10 +74,7 @@ export interface BookmarkState {
   removeCategories: (ids: string[]) => Promise<void>
   reorderCategories: (orderedIds: string[]) => Promise<void>
   /** 仅在同一父级（parentId 相同）的兄弟节点中重排，不影响其他分类 */
-  reorderSiblings: (
-    parentId: string | undefined,
-    orderedIds: string[],
-  ) => Promise<void>
+  reorderSiblings: (parentId: string | undefined, orderedIds: string[]) => Promise<void>
   /**
    * 通用移动：把分类 activeId 移到 targetParentId 下的 targetIndex 位置。
    * - 自动重排新父级与旧父级（如不同）的所有兄弟 order
@@ -136,10 +136,7 @@ export interface BookmarkState {
    * - 已经存在 (categoryId, url) 相同的卡片时跳过（与 importFromBrowser 的去重一致）
    * - 返回新建（或命中复用）的卡片；如果当前没有 activeCategory 则返回 null
    */
-  addCardFromHistory: (input: {
-    url: string
-    title: string
-  }) => Promise<BookmarkCard | null>
+  addCardFromHistory: (input: { url: string; title: string }) => Promise<BookmarkCard | null>
 
   // ─── settings ───────────────────────────
   /** 局部更新用户设置（自动持久化） */
@@ -158,10 +155,14 @@ export interface BookmarkState {
    * - 用 repo.bulkImport(mode='replace') 同时落盘，保证重启后看到的就是云端版本
    * - settings 不受影响（settings 走另一条管线）
    */
-  applyRemoteBookmarks: (payload: {
-    categories: Category[]
-    cards: BookmarkCard[]
-  }) => Promise<void>
+  applyRemoteBookmarks: (
+    payload: {
+      categories: Category[]
+      cards: BookmarkCard[]
+    },
+    ts: number,
+    force?: boolean,
+  ) => Promise<void>
 }
 
 /**

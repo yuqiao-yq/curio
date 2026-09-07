@@ -26,10 +26,7 @@ const LEGACY_PREFIX = 'tabit:'
 const NEW_PREFIX = 'curio:'
 
 /** localStorage 中已知的旧 key（搜索引擎选择、搜索历史） */
-const LEGACY_LOCALSTORAGE_KEYS = [
-  'tabit:web-search-engine',
-  'tabit:search-history',
-] as const
+const LEGACY_LOCALSTORAGE_KEYS = ['tabit:web-search-engine', 'tabit:search-history'] as const
 
 /** IndexedDB 库映射：[旧名, 新名] */
 const LEGACY_INDEXED_DBS: ReadonlyArray<readonly [string, string]> = [
@@ -48,6 +45,8 @@ export function runLegacyMigrationOnce(): Promise<void> {
   inflight = (async () => {
     try {
       const flag = await browser.storage.local.get(MIGRATION_FLAG_KEY)
+      // 页面存储不受后台完成标记约束；后台没有 localStorage。
+      migrateLocalStorage()
       if (flag[MIGRATION_FLAG_KEY]) return
 
       await migrateChromeStorageLocal()
@@ -259,10 +258,7 @@ async function copyAllStores(srcName: string, dstName: string): Promise<void> {
       }
       open.onsuccess = () => {
         const db = open.result
-        const writeTx = db.transaction(
-          Array.from(db.objectStoreNames),
-          'readwrite',
-        )
+        const writeTx = db.transaction(Array.from(db.objectStoreNames), 'readwrite')
         writeTx.oncomplete = () => {
           db.close()
           resolve()

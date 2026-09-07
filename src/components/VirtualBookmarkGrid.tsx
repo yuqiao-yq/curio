@@ -46,7 +46,7 @@ function findScrollParent(el: HTMLElement | null): HTMLElement {
     if (oy === 'auto' || oy === 'scroll') return cur
     cur = cur.parentElement
   }
-  return document.scrollingElement as HTMLElement ?? document.documentElement
+  return (document.scrollingElement as HTMLElement) ?? document.documentElement
 }
 
 export function VirtualBookmarkGrid({ items, threshold = 60 }: Props) {
@@ -56,26 +56,78 @@ export function VirtualBookmarkGrid({ items, threshold = 60 }: Props) {
   const cardWidthMin = useBookmarkStore((s) => s.settings.cardWidthMin)
   const cardWidthMax = useBookmarkStore((s) => s.settings.cardWidthMax)
   const cardWidthFixed = useBookmarkStore((s) => s.settings.cardWidthFixed)
+  const cardCustomWidthMin = useBookmarkStore((s) => s.settings.cardCustomWidthMin)
+  const cardCustomWidthMax = useBookmarkStore((s) => s.settings.cardCustomWidthMax)
   const gridSettings = useMemo(
-    () => ({ cardSize, cardWidthMode, cardWidthMin, cardWidthMax, cardWidthFixed }),
-    [cardSize, cardWidthMode, cardWidthMin, cardWidthMax, cardWidthFixed],
+    () => ({
+      cardSize,
+      cardWidthMode,
+      cardWidthMin,
+      cardWidthMax,
+      cardWidthFixed,
+      cardCustomWidthMin,
+      cardCustomWidthMax,
+    }),
+    [
+      cardSize,
+      cardWidthMode,
+      cardWidthMin,
+      cardWidthMax,
+      cardWidthFixed,
+      cardCustomWidthMin,
+      cardCustomWidthMax,
+    ],
   )
 
   const parentRef = useRef<HTMLDivElement | null>(null)
   const [scrollEl, setScrollEl] = useState<HTMLElement | null>(null)
+  const [scrollMargin, setScrollMargin] = useState(0)
 
   // 容器宽 → 用 utils/cardGrid 推 cols / gap / template
   const [layout, setLayout] = useState(() =>
-    getVirtualRowLayout(
-      gridSettings,
-      typeof window === 'undefined' ? 1280 : window.innerWidth,
-    ),
+    getVirtualRowLayout(gridSettings, typeof window === 'undefined' ? 1280 : window.innerWidth),
   )
 
   // 找滚动父节点（mount 后 DOM 才有）
   useLayoutEffect(() => {
     setScrollEl(findScrollParent(parentRef.current))
   }, [])
+
+  // 搜索说明、最近使用等位于列表前方；虚拟行坐标需要从滚动容器换算到列表起点。
+  useLayoutEffect(() => {
+    const el = parentRef.current
+    if (!el || !scrollEl) return
+    const update = () => {
+      const top = el.getBoundingClientRect().top
+      const documentScroll =
+        scrollEl === document.documentElement || scrollEl === document.scrollingElement
+      setScrollMargin(
+        documentScroll
+          ? top + window.scrollY
+          : top - scrollEl.getBoundingClientRect().top - scrollEl.clientTop + scrollEl.scrollTop,
+      )
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    // 前方模块折叠或高度变化时，列表宽度可能不变，但顶部偏移仍需更新。
+    let node: Element | null = el
+    while (node && node !== scrollEl) {
+      observer.observe(node)
+      for (
+        let sibling = node.previousElementSibling;
+        sibling;
+        sibling = sibling.previousElementSibling
+      )
+        observer.observe(sibling)
+      node = node.parentElement
+    }
+    observer.observe(scrollEl)
+    window.addEventListener('resize', update)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', update)
+    }
+  }, [scrollEl, items.length])
 
   // 监听容器宽度变化推导列数；gridSettings 变化时立即用最新策略复算一次
   useEffect(() => {
@@ -105,6 +157,7 @@ export function VirtualBookmarkGrid({ items, threshold = 60 }: Props) {
     getScrollElement: () => scrollEl,
     estimateSize: () => layout.estimatedRowHeight + layout.rowGap,
     overscan: 4,
+    scrollMargin,
     measureElement: (el) => el.getBoundingClientRect().height + layout.rowGap,
   })
 
@@ -117,7 +170,7 @@ export function VirtualBookmarkGrid({ items, threshold = 60 }: Props) {
   if (!enabled) {
     const grid = getGridClassAndStyle(gridSettings)
     return (
-      <div className={grid.className} style={grid.style}>
+      <div ref={parentRef} className={grid.className} style={grid.style}>
         {items.map(({ card, categoryPath, dupCount, dupCategoryPaths }) => (
           <BookmarkCardItem
             key={card.id}
@@ -143,7 +196,7 @@ export function VirtualBookmarkGrid({ items, threshold = 60 }: Props) {
             data-index={vr.index}
             ref={virtualizer.measureElement}
             className="absolute left-0 right-0"
-            style={{ transform: `translateY(${vr.start}px)` }}
+            style={{ transform: `translateY(${vr.start - scrollMargin}px)` }}
           >
             <div
               className="grid"

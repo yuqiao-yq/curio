@@ -1,4 +1,5 @@
 import { v4 as uuid } from 'uuid'
+import { INBOX_ID } from '../../../utils/collections'
 import type { BookmarkCard } from '../../../types/bookmark'
 import { getRepository, getRecentRepository } from '../../../repositories'
 import { normalizeTags } from '../helpers'
@@ -18,11 +19,9 @@ type CardsSlice = Pick<
   'addCard' | 'updateCard' | 'removeCard' | 'moveCard' | 'reorderCardsInCategory'
 >
 
-export const createCardsSlice = (
-  set: StoreSet,
-  get: StoreGet,
-): CardsSlice => ({
+export const createCardsSlice = (set: StoreSet, get: StoreGet): CardsSlice => ({
   async addCard({ categoryId, title, url, description, tags, icon }) {
+    categoryId ||= INBOX_ID
     const now = Date.now()
     const order = get().cards.filter((c) => c.categoryId === categoryId).length
     // tags 经过 normalizeTags 标准化，避免脏数据进库
@@ -44,7 +43,8 @@ export const createCardsSlice = (
       updatedAt: now,
     }
     await getRepository().saveCard(card)
-    set({ cards: [...get().cards, card] })
+    if (categoryId === INBOX_ID) set({ categories: await getRepository().getCategories() })
+    set({ cards: [...get().cards.filter((c) => c.id !== card.id), card] })
     scheduleBookmarksSyncPush()
     return card
   },
@@ -72,7 +72,8 @@ export const createCardsSlice = (
   },
 
   async moveCard(cardId, targetCategoryId, targetIndex) {
-    const cards = [...get().cards]
+    const before = get().cards
+    const cards = before.map((c) => ({ ...c }))
     const card = cards.find((c) => c.id === cardId)
     if (!card) return
     const fromCategory = card.categoryId
@@ -99,13 +100,25 @@ export const createCardsSlice = (
     // 之前先 await saveCards 才 set，IndexedDB 写入 ~几十毫秒期间
     // React state 仍是旧顺序，dnd-kit 结束拖拽后 sortable transform 重置 →
     // 卡片视觉先回原位再过渡到新位置 → 用户看到闪烁抖动。
+    const changed = cards.filter(
+      (c, i) => c.categoryId !== before[i].categoryId || c.order !== before[i].order,
+    )
+    changed.forEach((c) => {
+      c.updatedAt = Date.now()
+    })
     set({ cards })
-    await getRepository().saveCards(cards)
-    scheduleBookmarksSyncPush()
+    try {
+      await getRepository().saveCards(changed)
+      scheduleBookmarksSyncPush()
+    } catch (err) {
+      if (get().cards === cards) set({ cards: before })
+      throw err
+    }
   },
 
   async reorderCardsInCategory(categoryId, orderedIds) {
-    const cards = [...get().cards]
+    const before = get().cards
+    const cards = before.map((c) => ({ ...c }))
     const idxMap = new Map(orderedIds.map((id, i) => [id, i]))
     cards.forEach((c) => {
       if (c.categoryId === categoryId && idxMap.has(c.id)) {
@@ -113,10 +126,17 @@ export const createCardsSlice = (
       }
     })
     // v0.21.14：乐观更新，先 setState 让 sortable 立即应用新顺序
+    const changed = cards.filter((c, i) => c.order !== before[i].order)
+    changed.forEach((c) => {
+      c.updatedAt = Date.now()
+    })
     set({ cards })
-    await getRepository().saveCards(
-      cards.filter((c) => c.categoryId === categoryId),
-    )
-    scheduleBookmarksSyncPush()
+    try {
+      await getRepository().saveCards(changed)
+      scheduleBookmarksSyncPush()
+    } catch (err) {
+      if (get().cards === cards) set({ cards: before })
+      throw err
+    }
   },
 })
