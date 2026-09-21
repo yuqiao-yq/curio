@@ -155,11 +155,12 @@ export function RecentSection() {
   const canClear = recentEntries.length > 0
 
   return (
-    <section className="mb-6">
+    <section className={collapsed ? 'mb-3' : 'mb-8'}>
       {/* Header：与 CategorySection 子 section 视觉一致 */}
-      <header className="flex items-center gap-2 mb-3 group/sec">
+      <header className={cn('flex items-center gap-2 group/sec', !collapsed && 'mb-3')}>
         <button
           onClick={() => setCollapsed((v) => !v)}
+          aria-expanded={!collapsed}
           title={collapsed ? '展开' : '折叠'}
           className={cn(
             'w-6 h-6 flex items-center justify-center text-xs rounded',

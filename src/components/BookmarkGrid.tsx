@@ -222,40 +222,41 @@ export function BookmarkGrid() {
   const isEmpty = directCardCount === 0 && directFolderCount === 0 && descendants.length === 0
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col">
       {/* 最近使用：常驻在分类内容上方，独立折叠（搜索模式由上方 if 提前 return，这里不会渲染） */}
       <RecentSection />
 
-      {/* 当前分类（根 section）：使用 compact header 暴露折叠按钮
-          key 绑定 activeCategoryId：切换分类时强制 remount，恢复"展开"默认态 */}
-      <CategorySection
-        key={`root-${activeCategoryId}`}
-        category={activeCategory}
-        showFolders
-        headerVariant="compact"
-      />
-
-      {/* 所有后代分类（递归 DFS）：每个作为独立 section（full header），
-          标题用相对 active 的路径（不再重复根名），并按层级缩进，
-          层次越深视觉越缩进，避免 "Test / 1 / 11" 这种"被无奈展开的全路径"。
-          key 含 activeCategoryId：切换分类时强制 remount，所有子 section 回到"折叠"默认态。 */}
-      {descendants.map((cat) => (
+      <div className="flex flex-col gap-8">
         <CategorySection
-          key={`${activeCategoryId}-${cat.id}`}
-          category={cat}
-          rootId={activeCategoryId}
-          showFolders={false}
-          headerVariant="full"
+          // 当前分类独立折叠；切换分类时恢复展开状态。
+          key={`root-${activeCategoryId}`}
+          category={activeCategory}
+          showFolders
+          headerVariant="compact"
         />
-      ))}
 
-      {/* 空状态 */}
-      {isEmpty && (
-        <div className="text-center py-12 text-slate-400">
-          <div className="text-4xl mb-3">📭</div>
-          <p className="text-sm">这里还没有内容，点击 + 添加书签</p>
-        </div>
-      )}
+        {/* 所有后代分类（递归 DFS）：每个作为独立 section（full header），
+            标题用相对 active 的路径（不再重复根名），并按层级缩进，
+            层次越深视觉越缩进，避免 "Test / 1 / 11" 这种"被无奈展开的全路径"。
+            key 含 activeCategoryId：切换分类时强制 remount，所有子 section 回到"折叠"默认态。 */}
+        {descendants.map((cat) => (
+          <CategorySection
+            key={`${activeCategoryId}-${cat.id}`}
+            category={cat}
+            rootId={activeCategoryId}
+            showFolders={false}
+            headerVariant="full"
+          />
+        ))}
+
+        {/* 空状态 */}
+        {isEmpty && (
+          <div className="text-center py-12 text-slate-400">
+            <div className="text-4xl mb-3">📭</div>
+            <p className="text-sm">这里还没有内容，点击 + 添加书签</p>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
