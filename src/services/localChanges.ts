@@ -2,6 +2,8 @@ import { browser } from 'wxt/browser'
 import { getRepository } from '../repositories'
 import { useBookmarkStore } from '../stores/useBookmarkStore'
 import { LOCAL_CHANGE_KEY, LOCAL_WRITER_ID } from './storageLock'
+import { getPendingSettingsPatch } from '../stores/useBookmarkStore/scheduler'
+import { DEFAULT_SETTINGS } from '../types/bookmark'
 
 /** 只接收其它页面的提交；刷新数据不重新初始化当前分类、搜索或引导。 */
 export function subscribeLocalChanges(): () => void {
@@ -21,6 +23,7 @@ export function subscribeLocalChanges(): () => void {
         useBookmarkStore.setState({
           categories: data.categories,
           cards: data.cards,
+          settings: { ...DEFAULT_SETTINGS, ...data.settings, ...getPendingSettingsPatch() },
           activeCategoryId:
             active && data.categories.some((c) => c.id === active)
               ? active
@@ -36,7 +39,7 @@ export function subscribeLocalChanges(): () => void {
   const listener = (changes: Record<string, { newValue?: unknown }>, area: string) => {
     if (area !== 'local') return
     const change = changes[LOCAL_CHANGE_KEY]?.newValue as { writer?: string } | undefined
-    if (!change || change.writer === LOCAL_WRITER_ID) return
+    if (!change || (change.writer === LOCAL_WRITER_ID && !changes['curio:settings'])) return
     dirty = true
     void refresh()
   }

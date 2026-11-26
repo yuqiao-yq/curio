@@ -118,6 +118,10 @@ const chromeMock = {
     onMessage: { addListener: vi.fn(), removeListener: vi.fn() },
     lastError: undefined,
   },
+  identity: {
+    getRedirectURL: vi.fn(() => 'https://test-extension.chromiumapp.org/'),
+    launchWebAuthFlow: vi.fn(),
+  },
   tabs: {
     query: vi.fn(() => Promise.resolve([])),
     create: vi.fn(),

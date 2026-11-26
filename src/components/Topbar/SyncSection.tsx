@@ -271,7 +271,7 @@ export function SyncSection({ settings }: { settings: UserSettings }) {
 
   const baseStatus = (() => {
     if (!supported) return 'storage.sync 不可用（Firefox 需登录 Mozilla 账号）'
-    if (!meta.enabled) return '未开启 — 数据仅保存在本机'
+    if (!meta.enabled) return '浏览器账号同步未开启'
     return null
   })()
 
@@ -370,7 +370,7 @@ export function SyncSection({ settings }: { settings: UserSettings }) {
           </div>
           {overQuota && (
             <div className="mt-1 text-[11px] text-red-500 leading-relaxed">
-              已超 100KB 配额，新的书签推送会被拒绝；请清理无用书签，或等待 V2.0 云盘方案。
+              已超 100KB 配额，新的书签推送会被拒绝；请清理无用书签，或在下方连接 Google Drive 同步。
             </div>
           )}
         </div>

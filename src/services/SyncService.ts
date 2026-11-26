@@ -1,4 +1,5 @@
 import { browser } from 'wxt/browser'
+import { DRIVE_STATE_KEY, type DriveState } from './drive/model'
 import { withStorageLock } from './storageLock'
 import { acknowledgeBookmarkSync, PendingBookmarkChangesError } from './bookmarkSyncState'
 import { getRepository } from '../repositories'
@@ -394,7 +395,7 @@ async function writeBookmarks(
     const overKb = ((totalBytes - QUOTA_BYTES_TOTAL) / 1024).toFixed(1)
     const quotaHint =
       `书签数据 ${(totalBytes / 1024).toFixed(1)} KB，超出 chrome.storage.sync 100KB ` +
-      `上限约 ${overKb} KB。请清理无用书签 / 关闭同步、或等待 V2.0 云盘方案。`
+      `上限约 ${overKb} KB。请清理无用书签，或在下方连接 Google Drive 同步。`
     await setMeta({ lastError: quotaHint })
     return { ok: false, error: '超出云端配额', quotaHint, bytes: totalBytes }
   }
@@ -634,6 +635,21 @@ export async function handleBookmarksRemoteChange(
  * - 在 chrome.storage.sync 不可用时直接报错
  */
 export async function enableSync(
+  current: UserSettings,
+  categories: Category[],
+  cards: BookmarkCard[],
+): Promise<{ ok: boolean; error?: string; quotaHint?: string }> {
+  return withStorageLock('sync-provider', async () => {
+    const drive = (await browser.storage.local.get(DRIVE_STATE_KEY))[DRIVE_STATE_KEY] as
+      | DriveState
+      | undefined
+    if (drive?.enabled)
+      return { ok: false, error: '请先暂停 Google Drive 同步，再启用浏览器账号同步。' }
+    return enableBrowserSync(current, categories, cards)
+  })
+}
+
+async function enableBrowserSync(
   current: UserSettings,
   categories: Category[],
   cards: BookmarkCard[],

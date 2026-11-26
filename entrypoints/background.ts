@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser'
 import { runLegacyMigrationOnce } from '../src/services/legacyMigration'
+import { installDriveBackground } from '../src/services/drive/background'
 
 /**
  * Background Script
@@ -13,6 +14,7 @@ import { runLegacyMigrationOnce } from '../src/services/legacyMigration'
  */
 export default defineBackground(() => {
   console.log('[Curio] Background script started')
+  installDriveBackground()
 
   // 一次性数据迁移：把老用户的 tabit:* / tabit-* 数据搬到 curio 命名空间。
   // - 幂等：内部用 curio:_legacy_migrated_at 标记，已迁移即直接返回

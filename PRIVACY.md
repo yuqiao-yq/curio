@@ -1,6 +1,6 @@
 # Privacy Policy / 隐私政策
 
-**Effective date / 生效日期**: 2026-09-07
+**Effective date / 生效日期**: 2026-11-26
 **Extension / 扩展名称**: Curio - Bookmark New Tab (`curio`)
 **Contact / 联系方式**: open an issue at <https://github.com/yuqiao-yq/curio/issues>
 
@@ -12,7 +12,7 @@
 
 Curio is a **local-first** new-tab bookmark organizer.
 The developers operate no data-collection server and do not sell your data.
-Curio stores your library locally. Optional browser sync sends selected data
+Curio stores your library locally; optional Drive sync uses your configured authorization Worker. Optional browser sync sends selected data
 through your browser account; remote AI sends prompts directly to your selected
 provider. Content fetching, link checking, web search and external images contact
 the sites involved when you use those features.
@@ -30,8 +30,7 @@ The local data stores are listed below. Opt-in sync and AI requests are describe
 | Optional: extracted webpage text (for AI search) | `IndexedDB` (table `pageContents`) | Only you, in this browser profile |
 | Recently visited entries (if "include history" is enabled) | Read on demand from `chrome.history`, **not copied or stored** | Only you, in this browser profile |
 
-We do **not** maintain any backend server, analytics, telemetry, crash
-reporting, or third-party tracking SDK. There is no Curio account.
+There is no Curio account, analytics, telemetry, crash reporting or third-party tracking SDK. Optional Drive sync uses the authorization Worker you configure, described below.
 
 ### 3. Permissions we request, and why
 
@@ -42,11 +41,13 @@ explicitly opt in.
 | Permission | Why we need it |
 |-----------|----------------|
 | `bookmarks` | Core functionality. Read and write your browser bookmarks so Curio can organize them into a visual dashboard and (optionally) mirror your changes back to the native bookmark bar. |
+| `identity` | Open the cross-browser Google OAuth consent flow only when you choose to connect Drive. |
+| `alarms` | Resume optional Drive sync in the background, including after MV3 worker suspension. |
 | `storage` | Persist your categories, preferences, and AI configuration in `chrome.storage`. |
 | `history` | **Opt-in.** Only used when you toggle "Include browser history" in the Recent module. We call `chrome.history.search` on demand to render recently visited pages; results are never copied off-device. |
 | `tabs` | Used by the toolbar popup's "Add current page" button to read the active tab's `title` and `url` so it can be saved as a new bookmark. |
 | `favicon` | Render bookmark site icons via the local `chrome-extension://EXT_ID/_favicon/` URL scheme, avoiding third-party favicon-fetching services. |
-| Optional website access (`<all_urls>`) | **Requested at runtime.** AI provider setup requests access to the selected endpoint; content fetching and link checks request website access when invoked. Curio then performs a plain `fetch` of the public HTML of bookmarks you have already saved, extracts readable text via Mozilla Readability, and stores the result **locally** in IndexedDB so AI search can find it. Content fetching omits cookies and authentication headers. Extracted text is sent to your configured AI model only after you enable the separate page-content permission. You can disable this feature at any time and clear all cached content from Settings. |
+| Optional website access (`<all_urls>`) | **Requested at runtime.** AI provider setup requests access to the selected endpoint; content fetching and link checks request website access when invoked. Curio then performs a plain `fetch` of the public HTML of bookmarks you have already saved, extracts readable text via Mozilla Readability, and stores the result **locally** in IndexedDB so AI search can find it. Drive setup separately requests access to your authorization Worker and the Google Drive API. Content fetching omits cookies and authentication headers. Extracted text is sent to your configured AI model only after you enable the separate page-content permission. You can disable this feature at any time and clear all cached content from Settings. |
 
 ### 4. Optional AI features
 
@@ -75,8 +76,15 @@ When you enable browser sync, Curio writes bookmark structure and selected
 preferences to `browser.storage.sync`. Your browser handles transmission through
 its account service; the Curio developers do not receive a copy. Chrome and Firefox
 use separate sync services. AI configuration, API keys, fetched page content and
-local backups are excluded. Google Drive currently has a configuration entry only:
-no Drive authorization or upload runs in this version.
+local backups are excluded.
+
+### 5a. Optional Google Drive sync
+
+After you connect and confirm a merge preview, Curio sends bookmark cards (including notes, tags and custom images), categories and selected style preferences directly to your Google Drive appDataFolder over HTTPS. AI configuration/keys, history, fetched text, wallpaper, native bookmark IDs and local backups are excluded. Background sync runs after edits and periodically while the browser runs. Drive data is not end-to-end encrypted by Curio.
+
+The Cloudflare authorization Worker you configure processes OAuth codes, short-lived access tokens and refresh tokens; it does not receive bookmark files. Its operator must be trusted because these credentials permit access to the application directory. The Google client secret and encryption key remain in Worker Secrets. An encrypted refresh-credential envelope and account identifier/label are stored only in this browser profile; access tokens are cached in memory. Credentials never enter JSON exports or browser/Drive sync. The provided Worker disables application request logging, but hosting providers may process operational metadata under their own policies.
+
+Disconnecting removes local login credentials and stops sync, preserving local and cloud data. To revoke application access, use Google Account connections; to remove cloud data, pause all devices first and use Google Drive Settings → Manage apps → delete hidden app data. The application retains deletion markers to prevent old devices restoring deleted bookmarks.
 
 ### 6. Data sharing and sale
 
@@ -111,7 +119,7 @@ independent exports. Use Data → Sync to manage synced data separately.
 ### 1. 一句话总结
 
 Curio 是一个**本地优先**的新标签页书签整理工具。
-开发者没有数据收集服务器，也不出售你的数据。书签库默认保存在本地。启用浏览器同步后，指定数据经浏览器账号服务传输；使用远程 AI 时，请求直接发送给你选择的服务商。使用网页抓取、失效检测、网络搜索或外部图片时，也会连接相关网站。
+开发者不出售你的数据。默认仅在本地保存数据；可选 Drive 授权由你配置的 Worker 处理。书签库默认保存在本地。启用浏览器同步后，指定数据经浏览器账号服务传输；使用远程 AI 时，请求直接发送给你选择的服务商。使用网页抓取、失效检测、网络搜索或外部图片时，也会连接相关网站。
 
 ### 2. Curio 会处理哪些数据？
 
@@ -126,18 +134,20 @@ Curio 是一个**本地优先**的新标签页书签整理工具。
 | 可选：网页正文（供 AI 搜索使用） | 本机 `IndexedDB`（`pageContents` 表） | 仅当前浏览器配置下的你 |
 | 浏览历史条目（仅在开启「包含浏览历史」时） | 按需通过 `chrome.history` 读取，**不复制、不持久化** | 仅当前浏览器配置下的你 |
 
-我们**没有**任何后端服务器、统计上报、崩溃日志、第三方追踪 SDK。Curio 没有"账号"概念。
+Curio 没有独立账号系统、统计上报、崩溃日志或第三方追踪 SDK。可选 Drive 同步使用你配置的授权 Worker，详见第 5a 节。
 
 ### 3. 权限说明
 
 | 权限 | 用途 |
 |------|------|
 | `bookmarks` | 核心功能。读取与写入浏览器原生书签，用于可视化展示与（可选的）双向镜像。 |
+| `identity` | 仅在你连接 Google Drive 时打开跨浏览器 OAuth 授权窗口。 |
+| `alarms` | 在后台定时执行已开启的 Drive 同步，并在 MV3 后台休眠后恢复。 |
 | `storage` | 通过 `chrome.storage` 持久化分类、偏好和 AI 配置。 |
 | `history` | **需主动开启**。仅当你在「最近使用」模块勾选「包含浏览历史」时使用，调用 `chrome.history.search` 按需读取，**结果不会被复制或上传**。 |
 | `tabs` | 工具栏 popup 的「添加当前页面」按钮用来读取当前 tab 的 `title` 和 `url`，以便快速保存为书签。 |
 | `favicon` | 通过 `chrome-extension://EXT_ID/_favicon/` 在本地渲染网站图标，避免向第三方 favicon 服务发请求。 |
-| Optional website access (`<all_urls>`) | **运行时申请**。添加/测试 AI 模型时申请对应端点，内容抓取与失效检测时申请网站访问。内容抓取：对你**已收藏的书签** URL 发起公共 `fetch` 请求，借助 Mozilla Readability 抽取正文，结果仅写入**本地** IndexedDB 供 AI 搜索使用。抓取请求**不会**携带 cookie 或 Authorization 头；另行开启「允许 AI 使用已抓取正文」后，正文片段可发送给你配置的模型。你可以在「设置」中随时关闭并清空所有抓取过的内容。 |
+| Optional website access (`<all_urls>`) | **运行时申请**。添加/测试 AI 模型时申请对应端点，内容抓取与失效检测时申请网站访问。内容抓取：对你**已收藏的书签** URL 发起公共 `fetch` 请求，借助 Mozilla Readability 抽取正文，结果仅写入**本地** IndexedDB 供 AI 搜索使用。Drive 连接另行申请授权 Worker 与 Google Drive API 的访问权限。抓取请求**不会**携带 cookie 或 Authorization 头；另行开启「允许 AI 使用已抓取正文」后，正文片段可发送给你配置的模型。你可以在「设置」中随时关闭并清空所有抓取过的内容。 |
 
 ### 4. 可选的 AI 功能
 
@@ -152,7 +162,15 @@ Curio 的 AI 功能**默认完全关闭**。开启后有两种独立运行模式
 
 ### 5. 浏览器账号同步（`chrome.storage.sync`）
 
-开启同步后，Curio 把书签结构和偏好白名单写入 `browser.storage.sync`，浏览器通过其账号服务传输，Curio 开发者不接收副本。Chrome 与 Firefox 使用各自独立的同步服务。AI 配置、API Key、抓取正文和本地备份不参与同步。Google Drive 目前只有配置入口，本版本尚未执行 Drive 授权或上传。
+开启同步后，Curio 把书签结构和偏好白名单写入 `browser.storage.sync`，浏览器通过其账号服务传输，Curio 开发者不接收副本。Chrome 与 Firefox 使用各自独立的同步服务。AI 配置、API Key、抓取正文和本地备份不参与同步。
+
+### 5a. 可选 Google Drive 同步
+
+连接并确认合并预览后，Curio 将书签（含标签、备注及自定义图片）、分类和样式偏好白名单通过 HTTPS 直接传到你的 Google Drive 应用专属目录。AI 配置/密钥、历史、抓取正文、壁纸、本机书签 ID 和本地备份不上传。浏览器运行时会在编辑后及定时执行后台同步。Curio 不对 Drive 数据提供端到端加密。
+
+你配置的 Cloudflare 授权 Worker 处理 OAuth 授权码、短期访问令牌和续期令牌，不接收书签文件。令牌拥有应用目录访问权，因此必须信任该服务运营者。Google 客户端密钥与加密密钥只保存在 Worker Secrets。加密封装的续期凭据、账号标识和显示信息仅存于当前浏览器本地；短期访问令牌只缓存在内存。凭据不会进入 JSON 导出、浏览器同步或 Drive 同步。提供的 Worker 默认关闭请求日志，但托管平台仍可能按其政策处理运行元数据。
+
+断开连接会清除本机登录凭据并停止同步，保留本地和云端数据。撤销权限请使用 Google 账号的连接管理；删除云端数据请先暂停所有设备，再到 Google Drive 设置 → 管理应用 → 删除隐藏应用数据。同步协议保留删除标记，防止离线设备重新带回已删除书签。
 
 ### 6. 数据共享与销售
 
@@ -168,7 +186,7 @@ Curio 不面向 13 岁以下儿童。我们不会有意收集任何人的数据�
 
 ### 9. 你的权利
 
-你可以通过下列入口管理本地数据。卸载会删除本地备份，但不会撤回已经发送给 AI 服务商的数据，也不会删除独立导出的文件。浏览器同步数据需在「数据管理 → 同步」中单独管理。
+你可以通过下列入口管理本地数据。卸载会删除本地备份，但不会撤回已经发送给 AI 服务商的数据，也不会删除独立导出的文件。浏览器同步数据需在「数据管理 → 同步」中单独管理；Google Drive 数据需按第 5a 节单独管理。
 
 - 设置 → 「清除本地内容缓存」/「重置偏好」
 - 在 `chrome://extensions/` 移除 Curio 扩展

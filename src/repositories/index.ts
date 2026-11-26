@@ -2,7 +2,7 @@
  * Repository 入口
  *
  * 当前只提供本地实现。
- * 后续 V2 加入 Drive/Supabase 时，在此处通过 settings.syncProvider 决定返回哪种实现。
+ * Google Drive 在本地仓库之外协调同步，所有编辑仍先写本地；云端连接状态不改变仓库实例。
  */
 import { localRepo } from './LocalRepository'
 import { localRecentRepo } from './LocalRecentRepository'

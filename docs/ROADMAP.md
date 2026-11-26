@@ -78,17 +78,18 @@
 **目标**：解决 V1.5 的两大限制：
 1. 跨浏览器互通（Chrome ↔ Firefox 没有共享的 storage.sync）
 2. 书签量超过 chrome.storage.sync 100KB 配额时的容灾出口
-**状态**：已选 Google Drive，配置入口与创建文档已交付；真实授权、上传和跨浏览器同步尚未实现。详见 [Google Drive 配置](./GOOGLE_DRIVE_SETUP.md)。
+**状态**：Google Drive 扩展端与 Cloudflare OAuth Worker 已实现；自动化验证完成，个人部署的 Edge 连接已由使用者验证，Firefox 真实登录与完整跨浏览器同步场景仍待验证。详见 [Google Drive 配置](./GOOGLE_DRIVE_SETUP.md)。
 
 ### 本期方案 - Google Drive
-- [x] 公开客户端 ID 配置入口与 Chrome 构建配置
-- [x] OAuth 客户端创建步骤和跨浏览器接入边界
-- [ ] OAuth 登录（chrome.identity / launchWebAuthFlow）
-- [ ] DriveRepository 实现（复用 V1.5 已定义的 SyncProvider 接口）
-- [ ] appdata folder 隐藏存储（无 100KB 限制）
-- [ ] 增量同步 + 冲突合并（升级到 row-level LWW，按 entity.updatedAt）
-- [x] 本地书签待同步版本持久保存，重启后续传（当前 storage.sync）
-- [ ] Drive 逐条离线编辑队列和删除标记
+- [x] Chrome / Edge / Firefox 统一 OAuth 授权（launchWebAuthFlow + PKCE + Worker）
+- [x] Cloudflare Worker 配置、Secrets 与跨浏览器回调白名单部署说明
+- [x] appDataFolder 隐藏存储（仅 appdata 权限）
+- [x] 逐条逻辑版本合并与永久删除标记；各设备不可变快照
+- [x] 待上传版本持久保存、网络重试及上传中编辑保护
+- [x] 首次合并预览、本地备份、暂停/断开与账号切换保护
+- [x] 与浏览器账号同步互斥，后台定时拉取
+- [x] 配置真实 Google OAuth 客户端并部署授权 Worker
+- [ ] 完成三浏览器登录与同步场景联调
 
 ### 备选储备 - Supabase（当前不实施）
 - [ ] Supabase 项目搭建

@@ -41,7 +41,8 @@ export default defineConfig({
     permissions: [
       'bookmarks',
       'storage',
-      ...(browser === 'chrome' && process.env.GOOGLE_DRIVE_CLIENT_ID ? ['identity'] : []),
+      'identity',
+      'alarms',
       // 'tabs' 用于工具栏 popup「添加当前页面」功能：读取 active tab 的 title/url
       'tabs',
       ...(browser === 'chrome' ? ['favicon'] : []),
@@ -51,13 +52,8 @@ export default defineConfig({
     ...(browser === 'firefox'
       ? { optional_permissions: ['history', '<all_urls>'] }
       : { optional_host_permissions: ['<all_urls>'], optional_permissions: ['history'] }),
-    ...(browser === 'chrome' && process.env.GOOGLE_DRIVE_CLIENT_ID
-      ? {
-          oauth2: {
-            client_id: process.env.GOOGLE_DRIVE_CLIENT_ID,
-            scopes: ['https://www.googleapis.com/auth/drive.appdata'],
-          },
-        }
+    ...(browser === 'firefox'
+      ? { browser_specific_settings: { gecko: { id: 'curio@yuqiao-yq.github.io' } } }
       : {}),
     // WXT 默认会按文件名自动从 public/icon/*.png 生成 icons 字段，
     // 但商店审核偶尔会因「未显式声明」打回；这里显式列出 16/32/48/96/128。

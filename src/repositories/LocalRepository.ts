@@ -1,4 +1,5 @@
 import { browser } from 'wxt/browser'
+import { DRIVE_STATE_KEY, trackChanges, type DriveState } from '../services/drive/model'
 import { withStorageLock, LOCAL_CHANGE_KEY, LOCAL_WRITER_ID } from '../services/storageLock'
 import { saveBackup } from './BackupsDB'
 import {
@@ -51,8 +52,22 @@ class StorageRepository {
   private async writeData(items: Record<string, unknown>): Promise<void> {
     const revision = crypto.randomUUID()
     const bookmarksChanged = KEYS.cards in items || KEYS.categories in items
+    const drive = (await browser.storage.local.get(DRIVE_STATE_KEY))[DRIVE_STATE_KEY] as
+      | DriveState
+      | undefined
+    let nextDrive = drive
+    if (drive && (bookmarksChanged || KEYS.settings in items)) {
+      const before = await this.bulkExport()
+      nextDrive = trackChanges(drive, before, {
+        ...before,
+        categories: (items[KEYS.categories] as Category[] | undefined) ?? before.categories,
+        cards: (items[KEYS.cards] as BookmarkCard[] | undefined) ?? before.cards,
+        settings: (items[KEYS.settings] as UserSettings | undefined) ?? before.settings,
+      })
+    }
     await browser.storage.local.set({
       ...items,
+      ...(nextDrive !== drive ? { [DRIVE_STATE_KEY]: nextDrive } : {}),
       ...(bookmarksChanged
         ? { [BOOKMARK_SYNC_STATE_KEY]: { revision, pending: !this.fromSync } }
         : {}),
@@ -385,6 +400,11 @@ export class LocalRepository extends StorageRepository implements BookmarkReposi
   saveSettings(settings: UserSettings) {
     return this.mutate((repo) => repo.saveSettings(settings))
   }
+  saveSettingsPatch(patch: Partial<UserSettings>) {
+    return this.mutate(async (repo) =>
+      repo.saveSettings({ ...(await repo.getSettings()), ...patch }),
+    )
+  }
   savePresets(list: StylePreset[]) {
     return this.mutate((repo) => repo.savePresets(list))
   }
@@ -414,6 +434,9 @@ export class LocalRepository extends StorageRepository implements BookmarkReposi
 
 /** 单例 */
 export const localRepo = new LocalRepository()
+
+/** Caller must hold local-write; used to commit Drive data and its revision atomically. */
+export const readLocalDataUnlocked = () => new StorageRepository().bulkExport()
 
 /**
  * BFS 收集所有需删除的分类 ID（含后代）。

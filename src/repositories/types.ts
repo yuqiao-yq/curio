@@ -58,6 +58,7 @@ export interface BookmarkRepository {
   // ---------- 设置 ----------
   getSettings(): Promise<UserSettings>
   saveSettings(settings: UserSettings): Promise<void>
+  saveSettingsPatch?(patch: Partial<UserSettings>): Promise<void>
 
   // ---------- 批量 ----------
   /**

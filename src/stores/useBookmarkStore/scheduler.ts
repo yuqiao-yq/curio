@@ -5,6 +5,7 @@ import {
   pushLocalBookmarks as syncPushBookmarks,
 } from '../../services/SyncService'
 import { useBookmarkStore } from '.'
+import type { UserSettings } from '../../types/bookmark'
 
 /* ──────────────────────────────────────────────────────────────────────
  * 持久化 / 同步推送 debounce 调度器。
@@ -26,25 +27,42 @@ import { useBookmarkStore } from '.'
 
 // ─── settings 写盘 ─────────────────────────────────────────
 let settingsSaveTimer: ReturnType<typeof setTimeout> | null = null
+let settingsPatch: Partial<UserSettings> = {}
+const settingsInFlight: Partial<UserSettings>[] = []
+let settingsWrite: Promise<void> = Promise.resolve()
+export const getPendingSettingsPatch = (): Partial<UserSettings> =>
+  Object.assign({}, ...settingsInFlight, settingsPatch)
 const SETTINGS_SAVE_DEBOUNCE_MS = 250
 
-export function scheduleSettingsSave() {
+export function scheduleSettingsSave(
+  patch: Partial<UserSettings> = useBookmarkStore.getState().settings,
+) {
+  settingsPatch = { ...settingsPatch, ...patch }
   if (settingsSaveTimer) clearTimeout(settingsSaveTimer)
   settingsSaveTimer = setTimeout(() => {
-    settingsSaveTimer = null
-    void getRepository()
-      .saveSettings(useBookmarkStore.getState().settings)
-      .catch((err) => toast.error('设置保存失败', String(err)))
+    void flushSettingsSave().catch((err) => toast.error('设置保存失败', String(err)))
   }, SETTINGS_SAVE_DEBOUNCE_MS)
 }
 
-function flushSettingsSave() {
-  if (!settingsSaveTimer) return
+export async function flushSettingsSave(): Promise<void> {
+  if (!settingsSaveTimer) return settingsWrite
   clearTimeout(settingsSaveTimer)
   settingsSaveTimer = null
-  void getRepository()
-    .saveSettings(useBookmarkStore.getState().settings)
-    .catch((err) => toast.error('设置保存失败', String(err)))
+  const patch = settingsPatch
+  settingsPatch = {}
+  settingsInFlight.push(patch)
+  const repo = getRepository()
+  settingsWrite = settingsWrite
+    .catch(() => {})
+    .then(async () => {
+      try {
+        if (repo.saveSettingsPatch) await repo.saveSettingsPatch(patch)
+        else await repo.saveSettings({ ...(await repo.getSettings()), ...patch })
+      } finally {
+        settingsInFlight.splice(settingsInFlight.indexOf(patch), 1)
+      }
+    })
+  return settingsWrite
 }
 
 // ─── settings 同步推送 ─────────────────────────────────────
@@ -194,6 +212,7 @@ export function cancelPendingBrowserSyncExport() {
 export function cancelPendingSettingsSave() {
   if (settingsSaveTimer) clearTimeout(settingsSaveTimer)
   settingsSaveTimer = null
+  settingsPatch = {}
 }
 
 export function cancelPendingSyncPush() {
@@ -218,14 +237,14 @@ export function installFlushHandlers() {
   if (typeof window === 'undefined') return
   window.addEventListener('online', scheduleBookmarksSyncPush)
   window.addEventListener('beforeunload', () => {
-    flushSettingsSave()
+    void flushSettingsSave().catch((err) => toast.error('设置保存失败', String(err)))
     flushSettingsSyncPush()
     flushBookmarksSyncPush()
     flushBrowserSyncExport()
   })
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
-      flushSettingsSave()
+      void flushSettingsSave().catch((err) => toast.error('设置保存失败', String(err)))
       flushSettingsSyncPush()
       flushBookmarksSyncPush()
       flushBrowserSyncExport()

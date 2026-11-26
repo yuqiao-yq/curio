@@ -14,15 +14,9 @@ import type { BookmarkState, StoreGet, StoreSet } from '../types'
  * （开启时拉取，关闭时清空）。
  * ────────────────────────────────────────────────────────────────────── */
 
-type SettingsSlice = Pick<
-  BookmarkState,
-  'updateSettings' | 'applyRemoteSettings'
->
+type SettingsSlice = Pick<BookmarkState, 'updateSettings' | 'applyRemoteSettings'>
 
-export const createSettingsSlice = (
-  set: StoreSet,
-  get: StoreGet,
-): SettingsSlice => ({
+export const createSettingsSlice = (set: StoreSet, get: StoreGet): SettingsSlice => ({
   async updateSettings(patch) {
     const prev = get().settings
     const next: UserSettings = { ...prev, ...patch }
@@ -34,7 +28,7 @@ export const createSettingsSlice = (
     //
     // 内存状态依旧同步更新（上面的 set），UI 立刻响应；只有持久化被 defer。
     // unload 路径由模块级 beforeunload/visibilitychange 监听兜底 flush。
-    scheduleSettingsSave()
+    scheduleSettingsSave(patch)
 
     // V1.5：可同步字段发生变化时，再 debounce 一次推送到云端
     // - 不可同步字段（壁纸、侧边栏宽度、browserSync*）不会触发推送
@@ -61,7 +55,7 @@ export const createSettingsSlice = (
     set({ settings: next })
     // 仍要落本地，让重启后从 local 读到最新值；走 scheduleSettingsSave
     // 而不是即时写，是为了把多个 onChanged 合批。
-    scheduleSettingsSave()
+    scheduleSettingsSave(patch)
     // 注意：故意 不 调 scheduleSettingsSyncPush，避免回声循环。
     // 副作用：开关切换时同步处理 browserHistoryItems（与 updateSettings 一致）
     const prevOn = !!prev.recentIncludeBrowserHistory

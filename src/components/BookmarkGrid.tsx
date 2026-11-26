@@ -4,7 +4,6 @@ import {
   DragOverlay,
   MeasuringStrategy,
   PointerSensor,
-  closestCenter,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -18,6 +17,11 @@ import { useBookmarkStore } from '../stores/useBookmarkStore'
 import { useDropHintStore, findDropTargetAt } from '../stores/useDropHintStore'
 import { toast } from '../stores/useToastStore'
 import { BookmarkCardItem, CardDragPreview } from './BookmarkCardItem'
+import {
+  CardGridActionSlot,
+  CARD_DELETE_TARGET,
+  cardGridCollisionDetection,
+} from './CardGridActionSlot'
 import { VirtualBookmarkGrid } from './VirtualBookmarkGrid'
 import { RecentSection } from './RecentSection'
 import { promptDialog } from './Dialog'
@@ -289,6 +293,7 @@ function CategorySection({ category, rootId, showFolders, headerVariant }: Secti
   const reorder = useBookmarkStore((s) => s.reorderCardsInCategory)
   const addCard = useBookmarkStore((s) => s.addCard)
   const moveCard = useBookmarkStore((s) => s.moveCard)
+  const removeCard = useBookmarkStore((s) => s.removeCard)
   // v0.21.2：子 section header 上编辑 description
   const updateCategory = useBookmarkStore((s) => s.updateCategory)
   const cardSize = useBookmarkStore((s) => s.settings.cardSize)
@@ -320,6 +325,7 @@ function CategorySection({ category, rootId, showFolders, headerVariant }: Secti
   const [collapsed, setCollapsed] = useState(showFullHeader ? !subSectionDefaultExpanded : false)
   // v0.21.4：DragOverlay 需要的"当前被拖卡片 id"
   const [activeCardId, setActiveCardId] = useState<string | null>(null)
+  const [skipDropAnimation, setSkipDropAnimation] = useState(false)
 
   const subFolders = useMemo(
     () =>
@@ -339,6 +345,7 @@ function CategorySection({ category, rootId, showFolders, headerVariant }: Secti
   /* ─── 书签卡片拖拽：同分类排序 + 跨分类 moveCard ─── */
 
   const handleDragStart = (e: DragStartEvent) => {
+    setSkipDropAnimation(false)
     setActiveCardId(e.active.id as string)
   }
 
@@ -374,6 +381,16 @@ function CategorySection({ category, rootId, showFolders, headerVariant }: Secti
     const hint = useDropHintStore.getState().hoverCategoryId
     useDropHintStore.getState().set(null)
     setActiveCardId(null)
+
+    // The compact add slot becomes a bin only during this section's drag.
+    // Handle it before cross-category hints so a stale move hint cannot win.
+    if (cardSize === 'compact' && over?.data.current?.type === CARD_DELETE_TARGET) {
+      setSkipDropAnimation(true)
+      void removeCard(active.id as string).catch((error: unknown) => {
+        toast.error('删除失败', error instanceof Error ? error.message : '请稍后重试')
+      })
+      return
+    }
 
     // 1) 跨分类：用户拖到了某个 FolderCard 或侧栏行（且不是源分类）
     if (hint && hint !== category.id) {
@@ -668,7 +685,7 @@ function CategorySection({ category, rootId, showFolders, headerVariant }: Secti
               )}
               <DndContext
                 sensors={sensors}
-                collisionDetection={closestCenter}
+                collisionDetection={cardGridCollisionDetection}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 onDragCancel={handleDragCancel}
@@ -699,33 +716,13 @@ function CategorySection({ category, rootId, showFolders, headerVariant }: Secti
                         {directCards.map((card) => (
                           <BookmarkCardItem key={card.id} card={card} />
                         ))}
-                        {/* + 占位（所有层级）：默认透明虚边、hover 切毛玻璃 + 上浮，
-                        色阶对齐 header 文字（slate-700/dark:slate-200） */}
-                        {
-                          <button
-                            onClick={handleAddCard}
-                            style={addCardInlineStyle}
-                            className={cn(
-                              'group/add justify-self-start rounded-xl text-3xl flex items-center justify-center shrink-0',
-                              'border border-dashed border-slate-300/60 dark:border-slate-600/50',
-                              'text-slate-700 dark:text-slate-200',
-                              'bg-transparent',
-                              'transition-all duration-200 ease-out',
-                              'hover:bg-white/60 dark:hover:bg-slate-800/55 hover:backdrop-blur',
-                              'hover:border-transparent',
-                              'hover:-translate-y-0.5',
-                              'hover:shadow-[0_2px_4px_rgba(15,23,42,0.05),0_12px_24px_-4px_rgba(99,102,241,0.18)]',
-                              'dark:hover:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_14px_28px_-4px_rgba(99,102,241,0.35)]',
-                              addCardSquareClass,
-                            )}
-                            title="新建书签"
-                            aria-label="新建书签"
-                          >
-                            <span className="leading-none opacity-60 group-hover/add:opacity-100 transition-opacity">
-                              +
-                            </span>
-                          </button>
-                        }
+                        <CardGridActionSlot
+                          compact={cardSize === 'compact'}
+                          deleting={cardSize === 'compact' && activeCardId !== null}
+                          onAdd={handleAddCard}
+                          sizeClass={addCardSquareClass}
+                          style={addCardInlineStyle}
+                        />
                       </div>
                     )
                   })()}
@@ -746,7 +743,7 @@ function CategorySection({ category, rootId, showFolders, headerVariant }: Secti
                     - 此时恢复 dnd-kit 默认 dropAnimation 才正常：
                       浮层从指针位置平滑过渡到"新位置"的 active.rect → 自然吸附
                       active 元素同时 opacity 0→1 在新位置等着，无突兀 */}
-                <DragOverlay zIndex={9999}>
+                <DragOverlay zIndex={9999} dropAnimation={skipDropAnimation ? null : undefined}>
                   {activeCardId
                     ? (() => {
                         const card = allCards.find((c) => c.id === activeCardId)
