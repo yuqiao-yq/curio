@@ -107,9 +107,9 @@ it('rejects tampered and expired authorization tickets before contacting Google'
   const { ticket } = await callback()
   const request = (value: string) =>
     new Request(`${env.PUBLIC_ORIGIN}/oauth/callback?state=${encodeURIComponent(value)}&code=code`)
-  expect(
-    (await handleRequest(request(`${ticket.slice(0, 5)}X${ticket.slice(6)}`), env)).status,
-  ).toBe(401)
+  // The replacement must differ from the random IV character, even when it is X.
+  const tampered = `${ticket.slice(0, 5)}${ticket[5] === 'X' ? 'Y' : 'X'}${ticket.slice(6)}`
+  expect((await handleRequest(request(tampered), env)).status).toBe(401)
   vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 11 * 60_000)
   expect((await handleRequest(request(ticket), env)).status).toBe(401)
   vi.restoreAllMocks()
